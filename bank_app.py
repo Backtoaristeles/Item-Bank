@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 # ---- CONFIG ----
-ITEM_CATEGORIES = {
+ORIGINAL_ITEM_CATEGORIES = {
     "Waystones": [
         "Waystone EXP + Delirious",
         "Waystone EXP 35%",
@@ -23,12 +23,10 @@ ITEM_CATEGORIES = {
         "Logbook level 79-80"
     ]
 }
-ALL_ITEMS = sum(ITEM_CATEGORIES.values(), [])
 ITEM_TARGET = 100
 
 DATA_FILE = "bank_deposits.csv"
 
-# ---- DATA HANDLING ----
 def load_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -40,11 +38,14 @@ def load_data():
 def save_data(df):
     df.to_csv(DATA_FILE, index=False)
 
-# ---- MAIN APP ----
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
 
 df = load_data()
+
+ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
+DELETED_PREFIX = "DELETED: "
+ALL_ITEMS_PLUS_DELETED = ALL_ITEMS + [DELETED_PREFIX + item for item in ALL_ITEMS]
 
 # --- MULTI-ITEM DEPOSIT FORM ---
 with st.form("multi_item_deposit", clear_on_submit=True):
@@ -74,12 +75,12 @@ st.markdown("---")
 # ---- DEPOSITS OVERVIEW ----
 st.header("Deposits Overview")
 
-for cat, items in ITEM_CATEGORIES.items():
+for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     st.subheader(cat)
-    # Calculate and sort item totals descending
+    # Calculate and sort item totals descending, IGNORE deleted deposits
     item_totals = []
     for item in items:
-        total = df[df["Item"] == item]["Quantity"].sum()
+        total = df[(df["Item"] == item)]["Quantity"].sum()
         item_totals.append((item, total))
     item_totals.sort(key=lambda x: x[1], reverse=True)
     for item, total in item_totals:
@@ -95,24 +96,34 @@ for cat, items in ITEM_CATEGORIES.items():
             )
             st.table(user_summary)
 
+# ---- DELETED DEPOSITS ----
+deleted_df = df[df["Item"].str.startswith(DELETED_PREFIX)]
+if not deleted_df.empty:
+    st.markdown("---")
+    st.header("Deleted Deposits")
+    st.dataframe(deleted_df)
+
 st.markdown("---")
 
 # ---- DELETE BUTTONS PER ROW ----
-st.header("Delete Deposits")
+st.header("Mark Deposits as Deleted")
 
-if len(df):
-    st.write("Current Deposits (click Delete to remove a row):")
-    df_view = df.reset_index()  # includes index as a column
-    for i, row in df_view.iterrows():
+# Only allow to "delete" rows not already deleted
+active_df = df[~df["Item"].str.startswith(DELETED_PREFIX)].reset_index()
+if len(active_df):
+    st.write("Current Deposits (click Delete to move to Deleted Deposits):")
+    for i, row in active_df.iterrows():
         cols = st.columns([2, 2, 2, 1])
         cols[0].write(row['User'])
         cols[1].write(row['Item'])
         cols[2].write(row['Quantity'])
         delete_button = cols[3].button("Delete", key=f"delete_{i}")
         if delete_button:
-            df = df.drop(row['index']).reset_index(drop=True)
+            # Soft delete: mark as deleted instead of removing
+            df.at[row['index'], "Item"] = DELETED_PREFIX + row['Item']
             save_data(df)
-            st.success(f"Deleted deposit for {row['User']} - {row['Item']} ({row['Quantity']})")
+            st.success(f"Moved deposit to Deleted Deposits for {row['User']} - {row['Item']} ({row['Quantity']})")
             st.rerun()
 else:
-    st.info("No deposits yet!")
+    st.info("No deposits left to delete!")
+
