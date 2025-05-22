@@ -65,6 +65,7 @@ with st.form("multi_item_deposit", clear_on_submit=True):
             df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
             save_data(df)
             st.success(f"Added deposits for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
+            st.experimental_rerun()
         else:
             st.warning("Please enter at least one item with quantity > 0.")
 
@@ -75,10 +76,14 @@ st.header("Deposits Overview")
 
 for cat, items in ITEM_CATEGORIES.items():
     st.subheader(cat)
+    # Calculate and sort item totals descending
+    item_totals = []
     for item in items:
+        total = df[df["Item"] == item]["Quantity"].sum()
+        item_totals.append((item, total))
+    item_totals.sort(key=lambda x: x[1], reverse=True)
+    for item, total in item_totals:
         item_df = df[df["Item"] == item]
-        total = item_df["Quantity"].sum()
-        bar_color = "green" if total >= ITEM_TARGET else "blue"
         st.write(f"**{item}**: {total}")
         st.progress(min(total/ITEM_TARGET, 1.0), text=f"{total}/{ITEM_TARGET}")
         with st.expander("Per-user breakdown", expanded=False):
@@ -91,36 +96,23 @@ for cat, items in ITEM_CATEGORIES.items():
             st.table(user_summary)
 
 st.markdown("---")
-st.header("Edit or Delete Deposits")
+
+# ---- DELETE BUTTONS PER ROW ----
+st.header("Delete Deposits")
 
 if len(df):
-    df_view = df.copy()
-    df_view.index = df_view.index + 1  # 1-based for user
-    st.dataframe(df_view)
-    idx = st.number_input("Row number to edit/delete (see table above)", min_value=1, max_value=len(df), step=1)
-    action = st.selectbox("Action", ["Edit", "Delete"])
-    if st.button("Apply Action"):
-        row_idx = idx - 1
-        if action == "Delete":
-            df = df.drop(df.index[row_idx]).reset_index(drop=True)
+    st.write("Current Deposits (click Delete to remove a row):")
+    df_view = df.reset_index()  # includes index as a column
+    for i, row in df_view.iterrows():
+        cols = st.columns([2, 2, 2, 1])
+        cols[0].write(row['User'])
+        cols[1].write(row['Item'])
+        cols[2].write(row['Quantity'])
+        delete_button = cols[3].button("Delete", key=f"delete_{i}")
+        if delete_button:
+            df = df.drop(row['index']).reset_index(drop=True)
             save_data(df)
-            st.success("Deleted row.")
+            st.success(f"Deleted deposit for {row['User']} - {row['Item']} ({row['Quantity']})")
             st.experimental_rerun()
-        elif action == "Edit":
-            row = df.iloc[row_idx]
-            st.info(f"Editing row {idx}")
-            with st.form("edit_form"):
-                new_user = st.text_input("User", value=row["User"], key="edit_user")
-                new_item = st.selectbox("Item", ALL_ITEMS, index=ALL_ITEMS.index(row["Item"]), key="edit_item")
-                new_qty = st.number_input("Quantity", min_value=1, value=int(row["Quantity"]), step=1, key="edit_qty")
-                confirm = st.form_submit_button("Save Edit")
-                if confirm:
-                    df.at[row_idx, "User"] = new_user.strip()
-                    df.at[row_idx, "Item"] = new_item
-                    df.at[row_idx, "Quantity"] = int(new_qty)
-                    save_data(df)
-                    st.success("Row edited.")
-                    st.experimental_rerun()
 else:
     st.info("No deposits yet!")
-
