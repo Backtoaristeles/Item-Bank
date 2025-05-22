@@ -65,7 +65,7 @@ with st.form("multi_item_deposit", clear_on_submit=True):
             df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
             save_data(df)
             st.success(f"Added deposits for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.warning("Please enter at least one item with quantity > 0.")
 
@@ -113,6 +113,6 @@ if len(df):
             df = df.drop(row['index']).reset_index(drop=True)
             save_data(df)
             st.success(f"Deleted deposit for {row['User']} - {row['Item']} ({row['Quantity']})")
-            st.experimental_rerun()
+            st.rerun()
 else:
     st.info("No deposits yet!")
