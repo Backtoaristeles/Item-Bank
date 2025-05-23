@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from gspread_dataframe import set_with_dataframe, get_as_dataframe
 from google.oauth2.service_account import Credentials
+import math
 
 # ---- CONFIGURATION ----
 ORIGINAL_ITEM_CATEGORIES = {
@@ -241,33 +242,50 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
         )
         st.progress(min(total / target, 1.0), text=f"{total}/{target}")
-        with st.expander("Per-user breakdown", expanded=False):
+
+        # ---- Per-user breakdown & payout ----
+        with st.expander("Per-user breakdown & payout", expanded=False):
             user_summary = (
                 item_df.groupby("User")["Quantity"]
                 .sum()
                 .sort_values(ascending=False)
                 .reset_index()
             )
+            # Add payout columns with 10% fee, round DOWN to one decimal
+            payouts = []
+            for idx, row in user_summary.iterrows():
+                qty = row["Quantity"]
+                raw_payout = (qty / target) * divine_val if target else 0
+                payout_after_fee = raw_payout * 0.9  # 10% fee
+                payout_final = math.floor(payout_after_fee * 10) / 10
+                payouts.append(payout_final)
+            user_summary["Payout (Divines, after 10% fee)"] = payouts
             st.table(user_summary)
 
 st.markdown("---")
 
-# ---- DELETE BUTTONS PER ROW (EDITORS ONLY) ----
+# ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM ----
 if st.session_state['is_editor']:
     st.header("Delete Deposits (permanently)")
     if len(df):
-        st.write("Current Deposits (click Delete to permanently remove a row):")
-        df_view = df.reset_index()  # includes index as a column
-        for i, row in df_view.iterrows():
-            cols = st.columns([2, 2, 2, 1])
-            cols[0].write(row['User'])
-            cols[1].write(row['Item'])
-            cols[2].write(row['Quantity'])
-            delete_button = cols[3].button("Delete", key=f"delete_{i}")
-            if delete_button:
-                df = df.drop(row['index']).reset_index(drop=True)
-                save_data(df)
-                st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
-                st.rerun()
+        for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
+            st.subheader(cat)
+            for item in items:
+                item_rows = df[df["Item"] == item].reset_index()
+                if not item_rows.empty:
+                    st.markdown(f"**{item}**")
+                    for i, row in item_rows.iterrows():
+                        cols = st.columns([2, 2, 2, 1])
+                        cols[0].write(row['User'])
+                        cols[1].write(row['Item'])
+                        cols[2].write(row['Quantity'])
+                        delete_button = cols[3].button("Delete", key=f"delete_{row['index']}_{item}")
+                        if delete_button:
+                            df = df.drop(row['index']).reset_index(drop=True)
+                            save_data(df)
+                            st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
+                            st.rerun()
+                else:
+                    st.info(f"No deposits for {item}")
     else:
         st.info("No deposits yet!")
