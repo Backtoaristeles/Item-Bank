@@ -214,16 +214,26 @@ divines = {k: float(v) for k, v in divines.items()}
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
+    # ---- Admin: GLOBAL instant sell percentage ----
     if st.session_state['is_editor']:
+        st.subheader("Instant Sell Global Setting")
+        instant_sell_percent = st.number_input(
+            "Instant sell % of real price (all items)",
+            min_value=10,
+            max_value=100,
+            value=st.session_state.get("instant_sell_percent", 50),
+            step=1,
+            key="instant_sell_percent"
+        )
         changed = False
         changed_instant = False
         new_targets = {}
         new_divines = {}
         new_stack_sizes = {}
         new_sell_prices = {}
-        st.subheader("Sell/Instant Sell Settings")
+        st.subheader("Sell Settings (per item)")
         for item in ALL_ITEMS:
-            cols = st.columns([2, 2, 2, 2])
+            cols = st.columns([2, 2, 2])
             tgt = cols[0].number_input(
                 f"{item} target",
                 min_value=1,
@@ -240,13 +250,13 @@ with st.sidebar:
                 key=f"divine_{item}"
             )
             stack = cols[2].number_input(
-                f"Instant Sell Stack",
+                f"Sell Stack Size",
                 min_value=1,
                 value=int(stack_sizes.get(item, 50)),
                 step=1,
                 key=f"instant_stack_{item}"
             )
-            sell = cols[3].number_input(
+            sell = cols[2].number_input(
                 f"Sell Price (Divines, per stack)",
                 min_value=0.0,
                 value=float(sell_prices.get(item, 0)),
@@ -266,11 +276,12 @@ with st.sidebar:
             save_targets(new_targets, new_divines, ws_targets)
             st.success("Targets and Divine values saved! Refresh the page to see updated progress bars and values.")
             st.stop()
-        if st.button("Save Instant Sell Settings") and changed_instant:
+        if st.button("Save Sell Settings") and changed_instant:
             save_instant_sell(new_stack_sizes, new_sell_prices, ws_instant)
-            st.success("Instant sell settings saved! Refresh the page to see updated instant sell prices.")
+            st.success("Sell settings saved! Refresh the page to see updated sell prices.")
             st.stop()
     else:
+        instant_sell_percent = st.session_state.get("instant_sell_percent", 50)
         for item in ALL_ITEMS:
             st.text(f"{item}: Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines")
 
@@ -318,16 +329,16 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
 
-        # INSTANT SELL SETTINGS
-        instant_stack = stack_sizes.get(item, 50)
+        # INSTANT SELL SETTINGS (now using global percentage!)
+        stack_size = stack_sizes.get(item, 50)
         sell_price = float(sell_prices.get(item, 0))
-        instant_sell_price = sell_price / 2
+        instant_sell_price = sell_price * (instant_sell_percent / 100)
 
         st.markdown(
             f"<div style='display:flex; align-items:center;'>"
             f"<b>{item}</b>: {total} / {target} "
             + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
-            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell ({instant_stack}):</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines</span>"
+            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell ({instant_sell_percent}% of {sell_price:.1f} for {stack_size}):</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines</span>"
             f"</div>",
             unsafe_allow_html=True
         )
