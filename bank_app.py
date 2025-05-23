@@ -117,24 +117,35 @@ def load_instant_sell():
     try:
         ws = sh.worksheet(INSTANT_TAB)
     except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=INSTANT_TAB, rows=50, cols=2)
-        ws.append_row(["Item", "InstantSellStack"])
+        ws = sh.add_worksheet(title=INSTANT_TAB, rows=50, cols=3)
+        ws.append_row(["Item", "StackSize", "SellPrice"])
     df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
-    instant_stacks = {}
+    stack_sizes = {}
+    sell_prices = {}
     if not df.empty and "Item" in df.columns:
+        if "StackSize" not in df.columns:
+            df["StackSize"] = 50
+        if "SellPrice" not in df.columns:
+            df["SellPrice"] = ""
         for idx, row in df.iterrows():
             item = row["Item"]
             try:
-                instant_stacks[item] = int(float(row["InstantSellStack"]))
+                stack_sizes[item] = int(float(row["StackSize"]))
             except Exception:
-                instant_stacks[item] = 50
+                stack_sizes[item] = 50
+            try:
+                sell_prices[item] = float(row["SellPrice"]) if str(row["SellPrice"]).strip() != "" else 0
+            except Exception:
+                sell_prices[item] = 0
     for item in ALL_ITEMS:
-        if item not in instant_stacks:
-            instant_stacks[item] = 50
-    return instant_stacks, ws
+        if item not in stack_sizes:
+            stack_sizes[item] = 50
+        if item not in sell_prices:
+            sell_prices[item] = 0
+    return stack_sizes, sell_prices, ws
 
-def save_instant_sell(instant_stacks, ws):
-    df = pd.DataFrame([{"Item": item, "InstantSellStack": instant_stacks[item]} for item in ALL_ITEMS])
+def save_instant_sell(stack_sizes, sell_prices, ws):
+    df = pd.DataFrame([{"Item": item, "StackSize": stack_sizes[item], "SellPrice": sell_prices[item]} for item in ALL_ITEMS])
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
 
@@ -194,15 +205,180 @@ else:
 # ---- DATA LOADING ----
 df = load_data()
 targets, divines, ws_targets = load_targets()
-instant_stacks, ws_instant = load_instant_sell()
+stack_sizes, sell_prices, ws_instant = load_instant_sell()
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
     if st.session_state['is_editor']:
         changed = False
+        changed_instant = False
         new_targets = {}
         new_divines = {}
+        new_stack_sizes = {}
+        new_sell_prices = {}
+        st.subheader("Sell/Instant Sell Settings")
         for item in ALL_ITEMS:
-            cols = st.columns([2, 2])
-            tgt =
+            cols = st.columns([2, 2, 2, 2])
+            tgt = cols[0].number_input(
+                f"{item} target",
+                min_value=1,
+                value=targets.get(item, 100),
+                step=1,
+                key=f"target_{item}"
+            )
+            div = cols[1].number_input(
+                f"Stack Value (Divines)",
+                min_value=0.0,
+                value=float(divines.get(item, 0)),
+                step=0.1,
+                format="%.2f",
+                key=f"divine_{item}"
+            )
+            stack = cols[2].number_input(
+                f"Instant Sell Stack",
+                min_value=1,
+                value=stack_sizes.get(item, 50),
+                step=1,
+                key=f"instant_stack_{item}"
+            )
+            sell = cols[3].number_input(
+                f"Sell Price (Divines, per stack)",
+                min_value=0.0,
+                value=sell_prices.get(item, 0),
+                step=0.1,
+                format="%.2f",
+                key=f"instant_price_{item}"
+            )
+            if tgt != targets[item] or div != divines[item]:
+                changed = True
+            if stack != stack_sizes[item] or sell != sell_prices[item]:
+                changed_instant = True
+            new_targets[item] = tgt
+            new_divines[item] = div
+            new_stack_sizes[item] = stack
+            new_sell_prices[item] = sell
+        if st.button("Save Targets & Values") and changed:
+            save_targets(new_targets, new_divines, ws_targets)
+            st.success("Targets and Divine values saved! Refresh the page to see updated progress bars and values.")
+            st.stop()
+        if st.button("Save Instant Sell Settings") and changed_instant:
+            save_instant_sell(new_stack_sizes, new_sell_prices, ws_instant)
+            st.success("Instant sell settings saved! Refresh the page to see updated instant sell prices.")
+            st.stop()
+    else:
+        for item in ALL_ITEMS:
+            st.text(f"{item}: Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines")
+
+# --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY) ---
+if st.session_state['is_editor']:
+    with st.form("multi_item_deposit", clear_on_submit=True):
+        st.subheader("Add a Deposit (multiple items per user)")
+        user = st.text_input("User")
+        col1, col2 = st.columns(2)
+        item_qtys = {}
+        for i, item in enumerate(ALL_ITEMS):
+            col = col1 if i % 2 == 0 else col2
+            item_qtys[item] = col.number_input(f"{item}", min_value=0, step=1, key=f"add_{item}")
+        submitted = st.form_submit_button("Add Deposit(s)")
+        if submitted and user:
+            new_rows = []
+            for item, qty in item_qtys.items():
+                if qty > 0:
+                    new_rows.append({"User": user.strip(), "Item": item, "Quantity": int(qty)})
+            if new_rows:
+                df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+                save_data(df)
+                st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
+                st.rerun()
+            else:
+                st.warning("Please enter at least one item with quantity > 0.")
+
+st.markdown("---")
+
+# ---- DEPOSITS OVERVIEW ----
+st.header("Deposits Overview")
+
+for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
+    color = CATEGORY_COLORS.get(cat, "#FFFFFF")
+    st.markdown(f'<h2 style="color:{color}; font-weight:bold;">{cat}</h2>', unsafe_allow_html=True)
+    # Calculate and sort item totals descending
+    item_totals = []
+    for item in items:
+        total = df[(df["Item"] == item)]["Quantity"].sum()
+        item_totals.append((item, total))
+    item_totals.sort(key=lambda x: x[1], reverse=True)
+    for item, total in item_totals:
+        item_df = df[df["Item"] == item]
+        target = targets[item]
+        divine_val = divines[item]
+        divine_total = (total / target * divine_val) if target > 0 else 0
+
+        # INSTANT SELL SETTINGS
+        instant_stack = stack_sizes.get(item, 50)
+        sell_price = sell_prices.get(item, 0)
+        instant_sell_price = sell_price / 2
+
+        st.markdown(
+            f"<div style='display:flex; align-items:center;'>"
+            f"<b>{item}</b>: {total} / {target} "
+            + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
+            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell ({instant_stack}):</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines</span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+        st.progress(min(total / target, 1.0), text=f"{total}/{target}")
+
+        # ---- Per-user breakdown & payout ----
+        with st.expander("Per-user breakdown & payout", expanded=False):
+            user_summary = (
+                item_df.groupby("User")["Quantity"]
+                .sum()
+                .sort_values(ascending=False)
+                .reset_index()
+            )
+            payouts = []
+            fees = []
+            for idx, row in user_summary.iterrows():
+                qty = row["Quantity"]
+                raw_payout = (qty / target) * divine_val if target else 0
+                fee = math.floor((raw_payout * 0.10) * 10) / 10
+                payout_after_fee = raw_payout - (raw_payout * 0.10)
+                payout_final = math.floor(payout_after_fee * 10) / 10
+                payouts.append(payout_final)
+                fees.append(fee)
+            user_summary["Fee (10%)"] = fees
+            user_summary["Payout (Divines, after fee)"] = payouts
+            st.dataframe(
+                user_summary.style.format({"Fee (10%)": "{:.1f}", "Payout (Divines, after fee)": "{:.1f}"}),
+                use_container_width=True
+            )
+
+st.markdown("---")
+
+# ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM ----
+if st.session_state['is_editor']:
+    st.header("Delete Deposits (permanently)")
+    if len(df):
+        for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
+            color = CATEGORY_COLORS.get(cat, "#FFFFFF")
+            st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
+            for item in items:
+                item_rows = df[df["Item"] == item].reset_index()
+                if not item_rows.empty:
+                    st.markdown(f"**{item}**")
+                    for i, row in item_rows.iterrows():
+                        cols = st.columns([2, 2, 2, 1])
+                        cols[0].write(row['User'])
+                        cols[1].write(row['Item'])
+                        cols[2].write(row['Quantity'])
+                        delete_button = cols[3].button("Delete", key=f"delete_{row['index']}_{item}")
+                        if delete_button:
+                            df = df.drop(row['index']).reset_index(drop=True)
+                            save_data(df)
+                            st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
+                            st.rerun()
+                else:
+                    st.info(f"No deposits for {item}")
+    else:
+        st.info("No deposits yet!")
