@@ -27,6 +27,16 @@ ORIGINAL_ITEM_CATEGORIES = {
     ]
 }
 ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
+
+# ---- CATEGORY COLORS ----
+CATEGORY_COLORS = {
+    "Waystones": "#FFD700",   # Gold/Yellow
+    "Whites": "#FFFFFF",      # White
+    "Tablets": "#AA66CC",     # Purple
+    "Various": "#42A5F5",     # Blue
+    # If you add "Maps": "#2ecc40",  # Green
+}
+
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
@@ -195,6 +205,20 @@ with st.sidebar:
         for item in ALL_ITEMS:
             st.text(f"{item}: Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines")
 
+# ---- INSTANT SELL SETTINGS ----
+st.markdown("---")
+st.header("Instant Sell Settings")
+default_instant_stack = 50
+instant_stack = st.number_input(
+    "Set stack size for instant sell price calculation",
+    min_value=1,
+    max_value=200,
+    value=default_instant_stack,
+    step=1
+)
+
+st.markdown("---")
+
 # --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY) ---
 if st.session_state['is_editor']:
     with st.form("multi_item_deposit", clear_on_submit=True):
@@ -225,7 +249,8 @@ st.markdown("---")
 st.header("Deposits Overview")
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
-    st.subheader(cat)
+    color = CATEGORY_COLORS.get(cat, "#FFFFFF")
+    st.markdown(f'<h2 style="color:{color}; font-weight:bold;">{cat}</h2>', unsafe_allow_html=True)
     # Calculate and sort item totals descending
     item_totals = []
     for item in items:
@@ -237,9 +262,16 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         target = targets[item]
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
-        st.write(
-            f"**{item}**: {total} / {target} "
+        # INSTANT SELL PRICE
+        instant_sell_stack = instant_stack
+        instant_sell_price = (divine_val / target) * instant_sell_stack if target > 0 else 0
+        st.markdown(
+            f"<div style='display:flex; align-items:center;'>"
+            f"<b>{item}</b>: {total} / {target} "
             + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
+            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell Price ({instant_sell_stack}):</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines</span>"
+            f"</div>",
+            unsafe_allow_html=True
         )
         st.progress(min(total / target, 1.0), text=f"{total}/{target}")
 
@@ -257,15 +289,17 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             for idx, row in user_summary.iterrows():
                 qty = row["Quantity"]
                 raw_payout = (qty / target) * divine_val if target else 0
-                fee = raw_payout * 0.10
-                payout_after_fee = raw_payout - fee
+                fee = math.floor((raw_payout * 0.10) * 10) / 10
+                payout_after_fee = raw_payout - (raw_payout * 0.10)
                 payout_final = math.floor(payout_after_fee * 10) / 10
-                fee_final = math.floor(fee * 10) / 10
                 payouts.append(payout_final)
-                fees.append(fee_final)
+                fees.append(fee)
             user_summary["Fee (10%)"] = fees
             user_summary["Payout (Divines, after fee)"] = payouts
-            st.table(user_summary)
+            st.dataframe(
+                user_summary.style.format({"Fee (10%)": "{:.1f}", "Payout (Divines, after fee)": "{:.1f}"}),
+                use_container_width=True
+            )
 
 st.markdown("---")
 
@@ -274,7 +308,8 @@ if st.session_state['is_editor']:
     st.header("Delete Deposits (permanently)")
     if len(df):
         for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
-            st.subheader(cat)
+            color = CATEGORY_COLORS.get(cat, "#FFFFFF")
+            st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
             for item in items:
                 item_rows = df[df["Item"] == item].reset_index()
                 if not item_rows.empty:
