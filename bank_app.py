@@ -35,6 +35,21 @@ CATEGORY_COLORS = {
     "Various": "#42A5F5",     # Blue
 }
 
+ITEM_COLORS = {
+    "Breach ring level 82": "#D6A4FF",   # purple
+    "Stellar Amulet": "#FFD700",         # gold/yellow
+    "Heavy Belt": "#A4FFA3",             # greenish
+    "Waystone EXP + Delirious": "#FF6961",
+    "Waystone EXP 35%": "#FFB347",
+    "Waystone EXP": "#FFB347",
+    "Tablet Exp 9%+10% (random)": "#7FDBFF",
+    "Quantity Tablet (6%+)": "#B0E0E6",
+    "Grand Project Tablet": "#FFDCB9",
+    "Logbook level 79-80": "#42A5F5",
+}
+def get_item_color(item):
+    return ITEM_COLORS.get(item, "#FFF")
+
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
@@ -243,21 +258,34 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         item_totals.append((item, total))
     item_totals.sort(key=lambda x: x[1], reverse=True)
     for item, total in item_totals:
+        item_color = get_item_color(item)
         item_df = df[df["Item"] == item]
         target = targets[item]
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
 
         st.markdown(
-            (
-                f"<div style='display:flex; align-items:center;'>"
-                f"<b>{item}</b>: {total} / {target} "
-                + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
-                + f"</div>"
-            ),
+            f"""
+            <div style='
+                display:flex; 
+                align-items:center; 
+                border: 2px solid #222; 
+                border-radius: 10px; 
+                margin: 8px 0 16px 0; 
+                padding: 10px 18px;
+                background: #181818;
+            '>
+                <span style='font-weight:bold; color:{item_color}; font-size:1.18em; letter-spacing:0.5px;'>
+                    [{item}]
+                </span>
+                <span style='margin-left:22px; font-size:1.12em; color:#FFF;'>
+                    <b>Deposited:</b> {total} / {target}
+                </span>
+                {"<span style='margin-left:22px; color:#AAA;'>[Stack = {:.2f} Divines → Current Value ≈ {:.2f} Divines]</span>".format(divine_val, divine_total) if divine_val > 0 else ""}
+            </div>
+            """,
             unsafe_allow_html=True
         )
-
         st.progress(min(total / target, 1.0), text=f"{total}/{target}")
 
         # ---- Per-user breakdown & payout ----
