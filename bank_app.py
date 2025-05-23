@@ -335,15 +335,14 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         instant_sell_price = sell_price * (instant_sell_percent / 100)
 
         st.markdown(
-        f"<div style='display:flex; align-items:center;'>"
-        f"<b>{item}</b>: {total} / {target} "
-        + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
-        + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell:</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines for {stack_size} {item}</span>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
-
+            f"<div style='display:flex; align-items:center;'>"
+            f"<b>{item}</b>: {total} / {target} "
+            + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
+            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell:</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines for {stack_size} {item}</span>"
+            f"</div>",
+            unsafe_allow_html=True
         )
+
         st.progress(min(total / target, 1.0), text=f"{total}/{target}")
 
         # ---- Per-user breakdown & payout ----
