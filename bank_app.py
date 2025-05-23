@@ -4,30 +4,6 @@ import gspread
 from gspread_dataframe import set_with_dataframe, get_as_dataframe
 from google.oauth2.service_account import Credentials
 
-# ==== SIMPLE LOGIN ====
-if 'is_logged_in' not in st.session_state:
-    st.session_state['is_logged_in'] = False
-if 'is_editor' not in st.session_state:
-    st.session_state['is_editor'] = False
-if 'login_failed' not in st.session_state:
-    st.session_state['login_failed'] = False
-
-def login():
-    st.title("PoE Bulk Item Banking App (Login Required)")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if username == "Admin" and password == "AdminPOEconomics":
-            st.session_state['is_logged_in'] = True
-            st.session_state['is_editor'] = True
-        else:
-            st.session_state['is_logged_in'] = True
-            st.session_state['is_editor'] = False
-
-if not st.session_state['is_logged_in']:
-    login()
-    st.stop()
-
 # ---- CONFIGURATION ----
 ORIGINAL_ITEM_CATEGORIES = {
     "Waystones": [
@@ -123,11 +99,57 @@ def save_targets(targets, divines, ws):
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
 
-if st.session_state['is_editor']:
-    st.caption("You are logged in as **Admin** (Editor)")
-else:
-    st.caption("You are viewing as **Guest** (Read Only)")
+# ---- ADMIN LOGIN STATE HANDLING ----
+if 'is_editor' not in st.session_state:
+    st.session_state['is_editor'] = False
+if 'show_login' not in st.session_state:
+    st.session_state['show_login'] = False
+if 'login_failed' not in st.session_state:
+    st.session_state['login_failed'] = False
 
+def logout():
+    st.session_state['is_editor'] = False
+    st.session_state['show_login'] = False
+    st.session_state['login_failed'] = False
+
+def show_admin_login():
+    with st.form("admin_login"):
+        st.write("**Admin Login**")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+        if submit:
+            if username == "Admin" and password == "AdminPOEconomics":
+                st.session_state['is_editor'] = True
+                st.session_state['show_login'] = False
+                st.session_state['login_failed'] = False
+            else:
+                st.session_state['is_editor'] = False
+                st.session_state['login_failed'] = True
+
+# ---- TOP-CENTER ADMIN LOGIN BUTTON OR LOGOUT ----
+col1, col2, col3 = st.columns([1,2,1])
+with col2:
+    if not st.session_state['is_editor']:
+        if st.button("Admin login"):
+            st.session_state['show_login'] = not st.session_state['show_login']
+    else:
+        if st.button("Admin logout"):
+            logout()
+
+if st.session_state['show_login'] and not st.session_state['is_editor']:
+    col_spacer1, col_login, col_spacer2 = st.columns([1,2,1])
+    with col_login:
+        show_admin_login()
+    if st.session_state['login_failed']:
+        st.error("Incorrect username or password.")
+
+if st.session_state['is_editor']:
+    st.caption("**Admin mode enabled**")
+else:
+    st.caption("**Read only mode** (progress & deposit info only)")
+
+# ---- DATA LOADING ----
 df = load_data()
 targets, divines, ws_targets = load_targets()
 
