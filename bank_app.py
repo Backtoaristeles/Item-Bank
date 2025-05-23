@@ -249,10 +249,12 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_total = (total / target * divine_val) if target > 0 else 0
 
         st.markdown(
-            f"<div style='display:flex; align-items:center;'>"
-            f"<b>{item}</b>: {total} / {target} "
-            + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
-            f"</div>",
+            (
+                f"<div style='display:flex; align-items:center;'>"
+                f"<b>{item}</b>: {total} / {target} "
+                + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
+                + f"</div>"
+            ),
             unsafe_allow_html=True
         )
 
