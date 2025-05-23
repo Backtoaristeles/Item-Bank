@@ -12,7 +12,7 @@ ORIGINAL_ITEM_CATEGORIES = {
         "Waystone EXP 35%",
         "Waystone EXP"
     ],
-    "White Item Bases": [
+    "Whites": [
         "Stellar Amulet",
         "Breach ring level 82",
         "Heavy Belt"
@@ -30,7 +30,7 @@ ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
 
 CATEGORY_COLORS = {
     "Waystones": "#FFD700",   # Gold/Yellow
-    "White Item Bases": "#FFFFFF",      # White
+    "Whites": "#FFFFFF",      # White
     "Tablets": "#AA66CC",     # Purple
     "Various": "#42A5F5",     # Blue
 }
@@ -53,7 +53,6 @@ def get_item_color(item):
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
-LINKS_TAB = "Links"
 
 # ---- GOOGLE SHEETS FUNCTIONS ----
 def get_gsheet_client():
@@ -126,31 +125,6 @@ def save_targets(targets, divines, ws):
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
 
-# ---- LINK HANDLING ----
-def load_links():
-    gc = get_gsheet_client()
-    sh = gc.open(SHEET_NAME)
-    try:
-        ws = sh.worksheet(LINKS_TAB)
-    except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=LINKS_TAB, rows=50, cols=2)
-        ws.append_row(["Item", "Link"])
-    df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
-    links = {}
-    if not df.empty and "Item" in df.columns:
-        for idx, row in df.iterrows():
-            links[row["Item"]] = row["Link"] if "Link" in row and row["Link"] else ""
-    # Ensure all items present
-    for item in ALL_ITEMS:
-        if item not in links:
-            links[item] = ""
-    return links, ws
-
-def save_links(links, ws):
-    df = pd.DataFrame([{"Item": item, "Link": links[item]} for item in ALL_ITEMS])
-    ws.clear()
-    set_with_dataframe(ws, df, include_index=False)
-
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
 
@@ -207,7 +181,6 @@ else:
 # ---- DATA LOADING ----
 df = load_data()
 targets, divines, ws_targets = load_targets()
-links, ws_links = load_links()
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
@@ -293,27 +266,6 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         target = targets[item]
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
-
-        # --- Editable/displayed link block ---
-        link_changed = False
-        if st.session_state['is_editor']:
-            link_val = st.text_input(f"Link for {item}", value=links.get(item, ""), key=f"link_{item}")
-            if link_val != links.get(item, ""):
-                links[item] = link_val
-                link_changed = True
-            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-            if link_changed:
-                save_links(links, ws_links)
-                st.experimental_rerun()
-        else:
-            if links.get(item, ""):
-                st.markdown(
-                    f"<div style='margin-bottom:6px;'><a href='{links[item]}' style='color:#1da1f2; font-weight:bold;' target='_blank'>Link</a></div>",
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-        # --- End editable/displayed link block ---
 
         st.markdown(
             f"""
