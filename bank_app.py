@@ -12,7 +12,7 @@ ORIGINAL_ITEM_CATEGORIES = {
         "Waystone EXP 35%",
         "Waystone EXP"
     ],
-    "Whites": [
+    "White Item Bases": [
         "Stellar Amulet",
         "Breach ring level 82",
         "Heavy Belt"
@@ -30,7 +30,7 @@ ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
 
 CATEGORY_COLORS = {
     "Waystones": "#FFD700",   # Gold/Yellow
-    "Whites": "#FFFFFF",      # White
+    "White Item Bases": "#FFFFFF",      # White
     "Tablets": "#AA66CC",     # Purple
     "Various": "#42A5F5",     # Blue
 }
