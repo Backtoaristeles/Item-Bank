@@ -38,7 +38,6 @@ CATEGORY_COLORS = {
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
-INSTANT_TAB = "InstantSell"
 
 # ---- GOOGLE SHEETS FUNCTIONS ----
 def get_gsheet_client():
@@ -111,44 +110,6 @@ def save_targets(targets, divines, ws):
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
 
-def load_instant_sell():
-    gc = get_gsheet_client()
-    sh = gc.open(SHEET_NAME)
-    try:
-        ws = sh.worksheet(INSTANT_TAB)
-    except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=INSTANT_TAB, rows=50, cols=3)
-        ws.append_row(["Item", "StackSize", "SellPrice"])
-    df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
-    stack_sizes = {}
-    sell_prices = {}
-    if not df.empty and "Item" in df.columns:
-        if "StackSize" not in df.columns:
-            df["StackSize"] = 50
-        if "SellPrice" not in df.columns:
-            df["SellPrice"] = ""
-        for idx, row in df.iterrows():
-            item = row["Item"]
-            try:
-                stack_sizes[item] = int(float(row["StackSize"]))
-            except Exception:
-                stack_sizes[item] = 50
-            try:
-                sell_prices[item] = float(row["SellPrice"]) if str(row["SellPrice"]).strip() != "" else 0
-            except Exception:
-                sell_prices[item] = 0
-    for item in ALL_ITEMS:
-        if item not in stack_sizes:
-            stack_sizes[item] = 50
-        if item not in sell_prices:
-            sell_prices[item] = 0
-    return stack_sizes, sell_prices, ws
-
-def save_instant_sell(stack_sizes, sell_prices, ws):
-    df = pd.DataFrame([{"Item": item, "StackSize": stack_sizes[item], "SellPrice": sell_prices[item]} for item in ALL_ITEMS])
-    ws.clear()
-    set_with_dataframe(ws, df, include_index=False)
-
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
 
@@ -205,35 +166,17 @@ else:
 # ---- DATA LOADING ----
 df = load_data()
 targets, divines, ws_targets = load_targets()
-stack_sizes, sell_prices, ws_instant = load_instant_sell()
-
-# --- ENFORCE FLOATS FOR NUMBER_INPUTS ---
-sell_prices = {k: float(v) for k, v in sell_prices.items()}
-divines = {k: float(v) for k, v in divines.items()}
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
-    # ---- Admin: GLOBAL instant sell percentage ----
     if st.session_state['is_editor']:
-        st.subheader("Instant Sell Global Setting")
-        instant_sell_percent = st.number_input(
-            "Instant sell % of real price (all items)",
-            min_value=10,
-            max_value=100,
-            value=st.session_state.get("instant_sell_percent", 50),
-            step=1,
-            key="instant_sell_percent"
-        )
         changed = False
-        changed_instant = False
         new_targets = {}
         new_divines = {}
-        new_stack_sizes = {}
-        new_sell_prices = {}
-        st.subheader("Sell Settings (per item)")
+        st.subheader("Edit Targets & Values")
         for item in ALL_ITEMS:
-            cols = st.columns([2, 2, 2])
+            cols = st.columns([2, 2])
             tgt = cols[0].number_input(
                 f"{item} target",
                 min_value=1,
@@ -249,39 +192,15 @@ with st.sidebar:
                 format="%.2f",
                 key=f"divine_{item}"
             )
-            stack = cols[2].number_input(
-                f"Sell Stack Size",
-                min_value=1,
-                value=int(stack_sizes.get(item, 50)),
-                step=1,
-                key=f"instant_stack_{item}"
-            )
-            sell = cols[2].number_input(
-                f"Sell Price (Divines, per stack)",
-                min_value=0.0,
-                value=float(sell_prices.get(item, 0)),
-                step=0.1,
-                format="%.2f",
-                key=f"instant_price_{item}"
-            )
             if tgt != targets[item] or div != divines[item]:
                 changed = True
-            if stack != stack_sizes[item] or sell != sell_prices[item]:
-                changed_instant = True
             new_targets[item] = tgt
             new_divines[item] = div
-            new_stack_sizes[item] = stack
-            new_sell_prices[item] = sell
         if st.button("Save Targets & Values") and changed:
             save_targets(new_targets, new_divines, ws_targets)
             st.success("Targets and Divine values saved! Refresh the page to see updated progress bars and values.")
             st.stop()
-        if st.button("Save Sell Settings") and changed_instant:
-            save_instant_sell(new_stack_sizes, new_sell_prices, ws_instant)
-            st.success("Sell settings saved! Refresh the page to see updated sell prices.")
-            st.stop()
     else:
-        instant_sell_percent = st.session_state.get("instant_sell_percent", 50)
         for item in ALL_ITEMS:
             st.text(f"{item}: Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines")
 
@@ -329,20 +248,10 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
 
-        # INSTANT SELL SETTINGS (per 1 item)
-        stack_size = stack_sizes.get(item, 50)
-        sell_price = float(sell_prices.get(item, 0))
-        # Calculate instant sell for ONE item!
-        if stack_size > 0:
-            instant_sell_price_per_one = (sell_price / stack_size) * (instant_sell_percent / 100)
-        else:
-            instant_sell_price_per_one = 0
-
         st.markdown(
             f"<div style='display:flex; align-items:center;'>"
             f"<b>{item}</b>: {total} / {target} "
             + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
-            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell:</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price_per_one:.3f} Divines per 1 {item}</span>"
             f"</div>",
             unsafe_allow_html=True
         )
