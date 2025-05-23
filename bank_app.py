@@ -28,18 +28,17 @@ ORIGINAL_ITEM_CATEGORIES = {
 }
 ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
 
-# ---- CATEGORY COLORS ----
 CATEGORY_COLORS = {
     "Waystones": "#FFD700",   # Gold/Yellow
     "Whites": "#FFFFFF",      # White
     "Tablets": "#AA66CC",     # Purple
     "Various": "#42A5F5",     # Blue
-    # If you add "Maps": "#2ecc40",  # Green
 }
 
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
+INSTANT_TAB = "InstantSell"
 
 # ---- GOOGLE SHEETS FUNCTIONS ----
 def get_gsheet_client():
@@ -112,6 +111,33 @@ def save_targets(targets, divines, ws):
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
 
+def load_instant_sell():
+    gc = get_gsheet_client()
+    sh = gc.open(SHEET_NAME)
+    try:
+        ws = sh.worksheet(INSTANT_TAB)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=INSTANT_TAB, rows=50, cols=2)
+        ws.append_row(["Item", "InstantSellStack"])
+    df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
+    instant_stacks = {}
+    if not df.empty and "Item" in df.columns:
+        for idx, row in df.iterrows():
+            item = row["Item"]
+            try:
+                instant_stacks[item] = int(float(row["InstantSellStack"]))
+            except Exception:
+                instant_stacks[item] = 50
+    for item in ALL_ITEMS:
+        if item not in instant_stacks:
+            instant_stacks[item] = 50
+    return instant_stacks, ws
+
+def save_instant_sell(instant_stacks, ws):
+    df = pd.DataFrame([{"Item": item, "InstantSellStack": instant_stacks[item]} for item in ALL_ITEMS])
+    ws.clear()
+    set_with_dataframe(ws, df, include_index=False)
+
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
 
@@ -168,6 +194,7 @@ else:
 # ---- DATA LOADING ----
 df = load_data()
 targets, divines, ws_targets = load_targets()
+instant_stacks, ws_instant = load_instant_sell()
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
@@ -178,154 +205,4 @@ with st.sidebar:
         new_divines = {}
         for item in ALL_ITEMS:
             cols = st.columns([2, 2])
-            tgt = cols[0].number_input(
-                f"{item} target",
-                min_value=1,
-                value=targets.get(item, 100),
-                step=1,
-                key=f"target_{item}"
-            )
-            div = cols[1].number_input(
-                f"Stack Value (Divines)",
-                min_value=0.0,
-                value=float(divines.get(item, 0)),
-                step=0.1,
-                format="%.2f",
-                key=f"divine_{item}"
-            )
-            if tgt != targets[item] or div != divines[item]:
-                changed = True
-            new_targets[item] = tgt
-            new_divines[item] = div
-        if st.button("Save Targets & Values") and changed:
-            save_targets(new_targets, new_divines, ws_targets)
-            st.success("Targets and Divine values saved! Refresh the page to see updated progress bars and values.")
-            st.stop()
-    else:
-        for item in ALL_ITEMS:
-            st.text(f"{item}: Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines")
-
-# ---- INSTANT SELL SETTINGS ----
-st.markdown("---")
-st.header("Instant Sell Settings")
-default_instant_stack = 50
-instant_stack = st.number_input(
-    "Set stack size for instant sell price calculation",
-    min_value=1,
-    max_value=200,
-    value=default_instant_stack,
-    step=1
-)
-
-st.markdown("---")
-
-# --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY) ---
-if st.session_state['is_editor']:
-    with st.form("multi_item_deposit", clear_on_submit=True):
-        st.subheader("Add a Deposit (multiple items per user)")
-        user = st.text_input("User")
-        col1, col2 = st.columns(2)
-        item_qtys = {}
-        for i, item in enumerate(ALL_ITEMS):
-            col = col1 if i % 2 == 0 else col2
-            item_qtys[item] = col.number_input(f"{item}", min_value=0, step=1, key=f"add_{item}")
-        submitted = st.form_submit_button("Add Deposit(s)")
-        if submitted and user:
-            new_rows = []
-            for item, qty in item_qtys.items():
-                if qty > 0:
-                    new_rows.append({"User": user.strip(), "Item": item, "Quantity": int(qty)})
-            if new_rows:
-                df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-                save_data(df)
-                st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
-                st.rerun()
-            else:
-                st.warning("Please enter at least one item with quantity > 0.")
-
-st.markdown("---")
-
-# ---- DEPOSITS OVERVIEW ----
-st.header("Deposits Overview")
-
-for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
-    color = CATEGORY_COLORS.get(cat, "#FFFFFF")
-    st.markdown(f'<h2 style="color:{color}; font-weight:bold;">{cat}</h2>', unsafe_allow_html=True)
-    # Calculate and sort item totals descending
-    item_totals = []
-    for item in items:
-        total = df[(df["Item"] == item)]["Quantity"].sum()
-        item_totals.append((item, total))
-    item_totals.sort(key=lambda x: x[1], reverse=True)
-    for item, total in item_totals:
-        item_df = df[df["Item"] == item]
-        target = targets[item]
-        divine_val = divines[item]
-        divine_total = (total / target * divine_val) if target > 0 else 0
-        # INSTANT SELL PRICE
-        instant_sell_stack = instant_stack
-        instant_sell_price = (divine_val / target) * instant_sell_stack if target > 0 else 0
-        st.markdown(
-            f"<div style='display:flex; align-items:center;'>"
-            f"<b>{item}</b>: {total} / {target} "
-            + (f"(Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines)" if divine_val > 0 else "")
-            + f"&nbsp;&nbsp;<b style='margin-left:24px;'>Instant Sell Price ({instant_sell_stack}):</b> <span style='color:orange;font-weight:bold;'>{instant_sell_price:.1f} Divines</span>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-        st.progress(min(total / target, 1.0), text=f"{total}/{target}")
-
-        # ---- Per-user breakdown & payout ----
-        with st.expander("Per-user breakdown & payout", expanded=False):
-            user_summary = (
-                item_df.groupby("User")["Quantity"]
-                .sum()
-                .sort_values(ascending=False)
-                .reset_index()
-            )
-            # Add payout columns with 10% FEE, round DOWN to one decimal
-            payouts = []
-            fees = []
-            for idx, row in user_summary.iterrows():
-                qty = row["Quantity"]
-                raw_payout = (qty / target) * divine_val if target else 0
-                fee = math.floor((raw_payout * 0.10) * 10) / 10
-                payout_after_fee = raw_payout - (raw_payout * 0.10)
-                payout_final = math.floor(payout_after_fee * 10) / 10
-                payouts.append(payout_final)
-                fees.append(fee)
-            user_summary["Fee (10%)"] = fees
-            user_summary["Payout (Divines, after fee)"] = payouts
-            st.dataframe(
-                user_summary.style.format({"Fee (10%)": "{:.1f}", "Payout (Divines, after fee)": "{:.1f}"}),
-                use_container_width=True
-            )
-
-st.markdown("---")
-
-# ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM ----
-if st.session_state['is_editor']:
-    st.header("Delete Deposits (permanently)")
-    if len(df):
-        for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
-            color = CATEGORY_COLORS.get(cat, "#FFFFFF")
-            st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
-            for item in items:
-                item_rows = df[df["Item"] == item].reset_index()
-                if not item_rows.empty:
-                    st.markdown(f"**{item}**")
-                    for i, row in item_rows.iterrows():
-                        cols = st.columns([2, 2, 2, 1])
-                        cols[0].write(row['User'])
-                        cols[1].write(row['Item'])
-                        cols[2].write(row['Quantity'])
-                        delete_button = cols[3].button("Delete", key=f"delete_{row['index']}_{item}")
-                        if delete_button:
-                            df = df.drop(row['index']).reset_index(drop=True)
-                            save_data(df)
-                            st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
-                            st.rerun()
-                else:
-                    st.info(f"No deposits for {item}")
-    else:
-        st.info("No deposits yet!")
+            tgt =
