@@ -54,7 +54,7 @@ SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
 
-DEFAULT_BANK_BUY_PCT = 80   # percent (default 80%)
+DEFAULT_BANK_BUY_PCT = 80   # percent
 
 # ---- GOOGLE SHEETS FUNCTIONS ----
 def get_gsheet_client():
@@ -197,22 +197,22 @@ targets, divines, links, ws_targets = load_targets()
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
 
-    # ---- BANK BUY % ----
-    if 'bank_buy_pct' not in st.session_state:
-        st.session_state['bank_buy_pct'] = DEFAULT_BANK_BUY_PCT
-
-    st.subheader("Bank Instant Buy Settings")
-    bank_buy_pct = st.number_input(
-        "Bank buy % of sell price (instant sell payout)",
-        min_value=10, max_value=100, step=1,
-        value=st.session_state['bank_buy_pct'],
-        key="bank_buy_pct_input"
-    )
-    if bank_buy_pct != st.session_state['bank_buy_pct']:
-        st.session_state['bank_buy_pct'] = bank_buy_pct
-        st.success("Bank buy % updated. All instant sell prices are now updated.")
-
+    # Only admins see and can set the Bank Buy %
     if st.session_state['is_editor']:
+        if 'bank_buy_pct' not in st.session_state:
+            st.session_state['bank_buy_pct'] = DEFAULT_BANK_BUY_PCT
+
+        st.subheader("Bank Instant Buy Settings")
+        bank_buy_pct = st.number_input(
+            "Bank buy % of sell price (instant sell payout)",
+            min_value=10, max_value=100, step=1,
+            value=st.session_state['bank_buy_pct'],
+            key="bank_buy_pct_input"
+        )
+        if bank_buy_pct != st.session_state['bank_buy_pct']:
+            st.session_state['bank_buy_pct'] = bank_buy_pct
+            st.success("Bank buy % updated. All instant sell prices are now updated.")
+
         changed = False
         new_targets = {}
         new_divines = {}
@@ -371,4 +371,48 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
                 .sort_values(ascending=False)
                 .reset_index()
             )
-            payou
+            payouts = []
+            fees = []
+            for idx, row in user_summary.iterrows():
+                qty = row["Quantity"]
+                raw_payout = (qty / target) * divine_val if target else 0
+                fee = math.floor((raw_payout * 0.10) * 10) / 10
+                payout_after_fee = raw_payout - (raw_payout * 0.10)
+                payout_final = math.floor(payout_after_fee * 10) / 10
+                payouts.append(payout_final)
+                fees.append(fee)
+            user_summary["Fee (10%)"] = fees
+            user_summary["Payout (Divines, after fee)"] = payouts
+            st.dataframe(
+                user_summary.style.format({"Fee (10%)": "{:.1f}", "Payout (Divines, after fee)": "{:.1f}"}),
+                use_container_width=True
+            )
+
+st.markdown("---")
+
+# ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
+if st.session_state['is_editor']:
+    st.header("Delete Deposits (permanently)")
+    if len(df):
+        for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
+            color = CATEGORY_COLORS.get(cat, "#FFD700")
+            st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
+            cols = st.columns(len(items))
+            for idx, item in enumerate(items):
+                item_rows = df[df["Item"] == item].reset_index()
+                with cols[idx]:
+                    with st.expander(f"{item} ({len(item_rows)} deposits)", expanded=False):
+                        if not item_rows.empty:
+                            for i, row in item_rows.iterrows():
+                                c = st.columns([2, 2, 2, 1])
+                                c[0].write(row['User'])
+                                c[1].write(row['Item'])
+                                c[2].write(row['Quantity'])
+                                delete_button = c[3].button("Delete", key=f"delete_{row['index']}_{item}")
+                                if delete_button:
+                                    df = df.drop(row['index']).reset_index(drop=True)
+                                    save_data(df)
+                                    st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
+                                    st.rerun()
+                        else:
+                            st.info("No deposits
