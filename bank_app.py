@@ -415,4 +415,6 @@ if st.session_state['is_editor']:
                                     st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
                                     st.rerun()
                         else:
-                            st.info("No deposits
+                            st.info("No deposits for this item.")
+    else:
+        st.info("No deposits yet!")
