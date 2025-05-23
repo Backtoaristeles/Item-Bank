@@ -251,12 +251,16 @@ with st.sidebar:
             st.stop()
     else:
         for item in ALL_ITEMS:
+            stack = divines[item]
+            target = targets[item]
+            trade_link = links.get(item, "")
             st.markdown(
-                f"""
-                <span style='font-weight:bold;'>{item}:</span>
-                Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines<br>
-                {"Trade Link: <a href='" + links[item] + "' target='_blank'>[Open]</a>" if links[item] else ""}
-                """,
+                f"""<div style='margin-bottom:6px;'>
+                    <span style='font-weight:bold;'>{item}:</span><br>
+                    <span style='background: #222; color: #ffe066; border-radius: 6px; padding: 2px 10px; font-weight: 600;'>[Stack = {stack:.2f} Divines]</span>
+                    <span style='color:#ccc; margin-left:8px;'>Target = {target}</span><br>
+                    {("Trade Link: <a href='" + trade_link + "' target='_blank'>[Open]</a><br>") if trade_link else ""}
+                </div>""",
                 unsafe_allow_html=True
             )
 
@@ -319,20 +323,36 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         if links.get(item, ""):
             link_html = f"<a href='{links[item]}' target='_blank' style='margin-left:22px; color:#4af;'>🔗 Trade Link</a>"
 
-        extra_info = ""
+        # -- HIGHLIGHTED BADGE AND INFO --
         if divine_val > 0 and target > 0:
-            extra_info = (f"<span style='margin-left:22px; color:#AAA;'>"
-                          f"[Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines | "
-                          f"Instant Sell: <span style='color:#fa0;'>{instant_sell_price:.3f} Divines</span> <span style='font-size:85%; color:#888;'>(per item)</span>]</span>")
+            current_value = divine_total
+            extra_info = (
+                f"<span style='margin-left:22px; color:#AAA;'>"
+                f"<span style='background: #292900; color:#ffe066; border-radius: 8px; padding: 4px 10px; font-weight: 600;'>"
+                f"Instant Sell: {instant_sell_price:.3f} Divines <span style='font-size:85%; color:#888;'>(per item)</span>"
+                f"</span>"
+                f"</span>"
+                f"<br>"
+                f"<span style='display: inline-block; margin-left:22px; font-size:95%;'>"
+                f"<span style='background: #222; color: #ffe066; border-radius: 6px; padding: 2px 10px; font-weight: 600;'>[Stack = {divine_val:.2f} Divines]</span>"
+                f"<span style='color:#ccc; margin-left:12px;'>→ Current Value: {current_value:.2f} Divines</span>"
+                f"</span>"
+            )
         elif divine_val > 0:
-            extra_info = (f"<span style='margin-left:22px; color:#AAA;'>"
-                          f"[Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines]</span>")
+            extra_info = (
+                f"<span style='margin-left:22px; color:#AAA;'>"
+                f"<span style='background: #222; color: #ffe066; border-radius: 6px; padding: 2px 10px; font-weight: 600;'>[Stack = {divine_val:.2f} Divines]</span>"
+                f"</span>"
+            )
+        else:
+            extra_info = ""
 
         st.markdown(
             f"""
             <div style='
                 display:flex; 
-                align-items:center; 
+                flex-direction:column;
+                align-items:flex-start; 
                 border: 2px solid #222; 
                 border-radius: 10px; 
                 margin: 8px 0 16px 0; 
@@ -342,7 +362,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
                 <span style='font-weight:bold; color:{item_color}; font-size:1.18em; letter-spacing:0.5px;'>
                     [{item}]
                 </span>
-                <span style='margin-left:22px; font-size:1.12em; color:#FFF;'>
+                <span style='margin-left:0px; font-size:1.12em; color:#FFF;'>
                     <b>Deposited:</b> {total} / {target}
                 </span>
                 {extra_info}
