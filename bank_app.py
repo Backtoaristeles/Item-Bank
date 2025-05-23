@@ -251,14 +251,12 @@ with st.sidebar:
             st.stop()
     else:
         for item in ALL_ITEMS:
-            stack = divines[item]
-            target = targets[item]
-            trade_link = links.get(item, "")
             st.markdown(
-                f"""<div style='margin-bottom:14px;'>
-                    <span style='font-weight:bold;'>{item}:</span> Target = {target}, Stack Value = {stack:.2f} Divines
-                    {f"<br><span style='color:#ffe066; font-weight:bold;'>&#128279; <a href='{trade_link}' target='_blank' style='color:#ffe066;'>Trade Link</a></span>" if trade_link else ""}
-                </div>""",
+                f"""
+                <span style='font-weight:bold;'>{item}:</span>
+                Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines<br>
+                {"Trade Link: <a href='" + links[item] + "' target='_blank'>[Open]</a>" if links[item] else ""}
+                """,
                 unsafe_allow_html=True
             )
 
