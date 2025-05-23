@@ -54,6 +54,8 @@ SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
 
+DEFAULT_BANK_BUY_PCT = 80   # percent
+
 # ---- GOOGLE SHEETS FUNCTIONS ----
 def get_gsheet_client():
     scopes = [
@@ -82,27 +84,25 @@ def load_data():
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     return df
 
-def save_data(df):
-    gc = get_gsheet_client()
-    sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
-    set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
-
 def load_targets():
     gc = get_gsheet_client()
     sh = gc.open(SHEET_NAME)
     try:
         ws = sh.worksheet(TARGETS_TAB)
     except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=TARGETS_TAB, rows=50, cols=3)
-        ws.append_row(["Item", "Target", "Divines"])
+        ws = sh.add_worksheet(title=TARGETS_TAB, rows=50, cols=4)
+        ws.append_row(["Item", "Target", "Divines", "Link"])
     df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
     targets = {}
     divines = {}
+    links = {}
     if not df.empty and "Item" in df.columns:
         if "Target" not in df.columns:
             df["Target"] = 100
         if "Divines" not in df.columns:
             df["Divines"] = ""
+        if "Link" not in df.columns:
+            df["Link"] = ""
         for idx, row in df.iterrows():
             item = row["Item"]
             try:
@@ -113,17 +113,28 @@ def load_targets():
                 divines[item] = float(row["Divines"]) if str(row["Divines"]).strip() != "" else 0
             except Exception:
                 divines[item] = 0
+            try:
+                links[item] = row["Link"]
+            except Exception:
+                links[item] = ""
     for item in ALL_ITEMS:
         if item not in targets:
             targets[item] = 100
         if item not in divines:
             divines[item] = 0
-    return targets, divines, ws
+        if item not in links:
+            links[item] = ""
+    return targets, divines, links, ws
 
-def save_targets(targets, divines, ws):
-    df = pd.DataFrame([{"Item": item, "Target": targets[item], "Divines": divines[item]} for item in ALL_ITEMS])
+def save_targets(targets, divines, links, ws):
+    df = pd.DataFrame([{"Item": item, "Target": targets[item], "Divines": divines[item], "Link": links[item]} for item in ALL_ITEMS])
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
+
+def save_data(df):
+    gc = get_gsheet_client()
+    sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
+    set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
 
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
@@ -180,16 +191,33 @@ else:
 
 # ---- DATA LOADING ----
 df = load_data()
-targets, divines, ws_targets = load_targets()
+targets, divines, links, ws_targets = load_targets()
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
+
+    # Only admins see and can set the Bank Buy %
     if st.session_state['is_editor']:
+        if 'bank_buy_pct' not in st.session_state:
+            st.session_state['bank_buy_pct'] = DEFAULT_BANK_BUY_PCT
+
+        st.subheader("Bank Instant Buy Settings")
+        bank_buy_pct = st.number_input(
+            "Bank buy % of sell price (instant sell payout)",
+            min_value=10, max_value=100, step=1,
+            value=st.session_state['bank_buy_pct'],
+            key="bank_buy_pct_input"
+        )
+        if bank_buy_pct != st.session_state['bank_buy_pct']:
+            st.session_state['bank_buy_pct'] = bank_buy_pct
+            st.success("Bank buy % updated. All instant sell prices are now updated.")
+
         changed = False
         new_targets = {}
         new_divines = {}
-        st.subheader("Edit Targets & Values")
+        new_links = {}
+        st.subheader("Edit Targets, Values, and Trade Links")
         for item in ALL_ITEMS:
             cols = st.columns([2, 2])
             tgt = cols[0].number_input(
@@ -207,17 +235,30 @@ with st.sidebar:
                 format="%.2f",
                 key=f"divine_{item}"
             )
-            if tgt != targets[item] or div != divines[item]:
+            link = st.text_input(
+                f"{item} trade link",
+                value=links.get(item, ""),
+                key=f"link_{item}"
+            )
+            if tgt != targets[item] or div != divines[item] or link != links[item]:
                 changed = True
             new_targets[item] = tgt
             new_divines[item] = div
-        if st.button("Save Targets & Values") and changed:
-            save_targets(new_targets, new_divines, ws_targets)
-            st.success("Targets and Divine values saved! Refresh the page to see updated progress bars and values.")
+            new_links[item] = link
+        if st.button("Save Targets, Values, and Links") and changed:
+            save_targets(new_targets, new_divines, new_links, ws_targets)
+            st.success("Targets, Divine values, and Trade Links saved! Refresh the page to see updates.")
             st.stop()
     else:
         for item in ALL_ITEMS:
-            st.text(f"{item}: Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines")
+            st.markdown(
+                f"""
+                <span style='font-weight:bold;'>{item}:</span>
+                Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines<br>
+                {"Trade Link: <a href='" + links[item] + "' target='_blank'>[Open]</a>" if links[item] else ""}
+                """,
+                unsafe_allow_html=True
+            )
 
 # --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY) ---
 if st.session_state['is_editor']:
@@ -248,6 +289,8 @@ st.markdown("---")
 # ---- DEPOSITS OVERVIEW ----
 st.header("Deposits Overview")
 
+bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)
+
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     color = CATEGORY_COLORS.get(cat, "#FFD700")
     st.markdown(f"""
@@ -266,6 +309,24 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         target = targets[item]
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
+        # Calculate instant sell price for ONE item
+        if target > 0:
+            instant_sell_price = (divine_val / target) * bank_buy_pct / 100
+        else:
+            instant_sell_price = 0
+
+        link_html = ""
+        if links.get(item, ""):
+            link_html = f"<a href='{links[item]}' target='_blank' style='margin-left:22px; color:#4af;'>🔗 Trade Link</a>"
+
+        extra_info = ""
+        if divine_val > 0 and target > 0:
+            extra_info = (f"<span style='margin-left:22px; color:#AAA;'>"
+                          f"[Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines | "
+                          f"Instant Sell: <span style='color:#fa0;'>{instant_sell_price:.3f} Divines</span> <span style='font-size:85%; color:#888;'>(per item)</span>]</span>")
+        elif divine_val > 0:
+            extra_info = (f"<span style='margin-left:22px; color:#AAA;'>"
+                          f"[Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines]</span>")
 
         st.markdown(
             f"""
@@ -284,7 +345,8 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
                 <span style='margin-left:22px; font-size:1.12em; color:#FFF;'>
                     <b>Deposited:</b> {total} / {target}
                 </span>
-                {"<span style='margin-left:22px; color:#AAA;'>[Stack = {:.2f} Divines → Current Value ≈ {:.2f} Divines]</span>".format(divine_val, divine_total) if divine_val > 0 else ""}
+                {extra_info}
+                {link_html}
             </div>
             """,
             unsafe_allow_html=True
@@ -328,29 +390,31 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
 
 st.markdown("---")
 
-# ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM ----
+# ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
 if st.session_state['is_editor']:
     st.header("Delete Deposits (permanently)")
     if len(df):
         for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             color = CATEGORY_COLORS.get(cat, "#FFD700")
             st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
-            for item in items:
+            cols = st.columns(len(items))
+            for idx, item in enumerate(items):
                 item_rows = df[df["Item"] == item].reset_index()
-                if not item_rows.empty:
-                    st.markdown(f"**{item}**")
-                    for i, row in item_rows.iterrows():
-                        cols = st.columns([2, 2, 2, 1])
-                        cols[0].write(row['User'])
-                        cols[1].write(row['Item'])
-                        cols[2].write(row['Quantity'])
-                        delete_button = cols[3].button("Delete", key=f"delete_{row['index']}_{item}")
-                        if delete_button:
-                            df = df.drop(row['index']).reset_index(drop=True)
-                            save_data(df)
-                            st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
-                            st.rerun()
-                else:
-                    st.info(f"No deposits for {item}")
+                with cols[idx]:
+                    with st.expander(f"{item} ({len(item_rows)} deposits)", expanded=False):
+                        if not item_rows.empty:
+                            for i, row in item_rows.iterrows():
+                                c = st.columns([2, 2, 2, 1])
+                                c[0].write(row['User'])
+                                c[1].write(row['Item'])
+                                c[2].write(row['Quantity'])
+                                delete_button = c[3].button("Delete", key=f"delete_{row['index']}_{item}")
+                                if delete_button:
+                                    df = df.drop(row['index']).reset_index(drop=True)
+                                    save_data(df)
+                                    st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
+                                    st.rerun()
+                        else:
+                            st.info("No deposits for this item.")
     else:
         st.info("No deposits yet!")
