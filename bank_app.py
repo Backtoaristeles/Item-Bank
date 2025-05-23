@@ -251,15 +251,20 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
                 .sort_values(ascending=False)
                 .reset_index()
             )
-            # Add payout columns with 10% fee, round DOWN to one decimal
+            # Add payout columns with 10% FEE, round DOWN to one decimal
             payouts = []
+            fees = []
             for idx, row in user_summary.iterrows():
                 qty = row["Quantity"]
                 raw_payout = (qty / target) * divine_val if target else 0
-                payout_after_fee = raw_payout * 0.9  # 10% fee
+                fee = raw_payout * 0.10
+                payout_after_fee = raw_payout - fee
                 payout_final = math.floor(payout_after_fee * 10) / 10
+                fee_final = math.floor(fee * 10) / 10
                 payouts.append(payout_final)
-            user_summary["Payout (Divines, after 10% fee)"] = payouts
+                fees.append(fee_final)
+            user_summary["Fee (10%)"] = fees
+            user_summary["Payout (Divines, after fee)"] = payouts
             st.table(user_summary)
 
 st.markdown("---")
