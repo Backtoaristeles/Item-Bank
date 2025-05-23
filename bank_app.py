@@ -250,7 +250,10 @@ st.header("Deposits Overview")
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     color = CATEGORY_COLORS.get(cat, "#FFD700")
-    st.markdown(f'<h2 style="color:{color}; font-weight:bold;">{cat}</h2>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style='margin-top: 38px;'></div>
+    <h2 style="color:{color}; font-weight:bold; margin-bottom: 14px;">{cat}</h2>
+    """, unsafe_allow_html=True)
     # Calculate and sort item totals descending
     item_totals = []
     for item in items:
@@ -286,7 +289,17 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             """,
             unsafe_allow_html=True
         )
-        st.progress(min(total / target, 1.0), text=f"{total}/{target}")
+
+        # GREEN BAR IF FULL, ELSE NORMAL
+        if total >= target:
+            st.success(f"✅ {total}/{target} – Target reached!")
+            st.markdown("""
+            <div style='height:22px; width:100%; background:#22c55e; border-radius:7px; display:flex; align-items:center;'>
+                <span style='margin-left:10px; color:white; font-weight:bold;'>FULL</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.progress(min(total / target, 1.0), text=f"{total}/{target}")
 
         # ---- Per-user breakdown & payout ----
         with st.expander("Per-user breakdown & payout", expanded=False):
