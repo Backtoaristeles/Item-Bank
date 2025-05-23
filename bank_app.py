@@ -315,7 +315,7 @@ st.markdown("---")
 st.header("Deposits Overview")
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
-    color = CATEGORY_COLORS.get(cat, "#FFFFFF")
+    color = CATEGORY_COLORS.get(cat, "#FFD700")
     st.markdown(f'<h2 style="color:{color}; font-weight:bold;">{cat}</h2>', unsafe_allow_html=True)
     # Calculate and sort item totals descending
     item_totals = []
@@ -377,7 +377,7 @@ if st.session_state['is_editor']:
     st.header("Delete Deposits (permanently)")
     if len(df):
         for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
-            color = CATEGORY_COLORS.get(cat, "#FFFFFF")
+            color = CATEGORY_COLORS.get(cat, "#FFD700")
             st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
             for item in items:
                 item_rows = df[df["Item"] == item].reset_index()
