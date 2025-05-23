@@ -255,13 +255,15 @@ with st.sidebar:
                 f"""
                 <span style='font-weight:bold;'>{item}:</span>
                 Target = {targets[item]}, Stack Value = {divines[item]:.2f} Divines<br>
-                {"Trade Link: <a href='" + links[item] + "' target='_blank'>[Open]</a>" if links[item] else ""}
                 """,
                 unsafe_allow_html=True
             )
 
 # --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY) ---
 if st.session_state['is_editor']:
+    if 'deposit_submitted' not in st.session_state:
+        st.session_state['deposit_submitted'] = False
+
     with st.form("multi_item_deposit", clear_on_submit=True):
         st.subheader("Add a Deposit (multiple items per user)")
         user = st.text_input("User")
@@ -271,7 +273,7 @@ if st.session_state['is_editor']:
             col = col1 if i % 2 == 0 else col2
             item_qtys[item] = col.number_input(f"{item}", min_value=0, step=1, key=f"add_{item}")
         submitted = st.form_submit_button("Add Deposit(s)")
-        if submitted and user:
+        if submitted and user and not st.session_state['deposit_submitted']:
             new_rows = []
             for item, qty in item_qtys.items():
                 if qty > 0:
@@ -279,10 +281,15 @@ if st.session_state['is_editor']:
             if new_rows:
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df)
+                st.session_state['deposit_submitted'] = True
                 st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.rerun()
             else:
                 st.warning("Please enter at least one item with quantity > 0.")
+
+    # Reset anti-double-submit flag when not submitting
+    if st.session_state.get('deposit_submitted', False) and not submitted:
+        st.session_state['deposit_submitted'] = False
 
 st.markdown("---")
 
@@ -315,10 +322,6 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         else:
             instant_sell_price = 0
 
-        link_html = ""
-        if links.get(item, ""):
-            link_html = f"<a href='{links[item]}' target='_blank' style='margin-left:22px; color:#4af;'>🔗 Trade Link</a>"
-
         extra_info = ""
         if divine_val > 0 and target > 0:
             extra_info = (f"<span style='margin-left:22px; color:#AAA;'>"
@@ -346,7 +349,6 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
                     <b>Deposited:</b> {total} / {target}
                 </span>
                 {extra_info}
-                {link_html}
             </div>
             """,
             unsafe_allow_html=True
