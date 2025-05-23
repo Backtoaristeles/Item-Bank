@@ -207,6 +207,10 @@ df = load_data()
 targets, divines, ws_targets = load_targets()
 stack_sizes, sell_prices, ws_instant = load_instant_sell()
 
+# --- ENFORCE FLOATS FOR NUMBER_INPUTS ---
+sell_prices = {k: float(v) for k, v in sell_prices.items()}
+divines = {k: float(v) for k, v in divines.items()}
+
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
@@ -223,7 +227,7 @@ with st.sidebar:
             tgt = cols[0].number_input(
                 f"{item} target",
                 min_value=1,
-                value=targets.get(item, 100),
+                value=int(targets.get(item, 100)),
                 step=1,
                 key=f"target_{item}"
             )
@@ -238,14 +242,14 @@ with st.sidebar:
             stack = cols[2].number_input(
                 f"Instant Sell Stack",
                 min_value=1,
-                value=stack_sizes.get(item, 50),
+                value=int(stack_sizes.get(item, 50)),
                 step=1,
                 key=f"instant_stack_{item}"
             )
             sell = cols[3].number_input(
                 f"Sell Price (Divines, per stack)",
                 min_value=0.0,
-                value=sell_prices.get(item, 0),
+                value=float(sell_prices.get(item, 0)),
                 step=0.1,
                 format="%.2f",
                 key=f"instant_price_{item}"
@@ -316,7 +320,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
 
         # INSTANT SELL SETTINGS
         instant_stack = stack_sizes.get(item, 50)
-        sell_price = sell_prices.get(item, 0)
+        sell_price = float(sell_prices.get(item, 0))
         instant_sell_price = sell_price / 2
 
         st.markdown(
