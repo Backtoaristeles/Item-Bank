@@ -58,6 +58,11 @@ def load_data():
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     return df
 
+def save_data(df):
+    gc = get_gsheet_client()
+    sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
+    set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
+
 def load_targets():
     gc = get_gsheet_client()
     sh = gc.open(SHEET_NAME)
