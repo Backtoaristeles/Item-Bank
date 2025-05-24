@@ -7,12 +7,6 @@ import math
 
 # ---- CONFIGURATION ----
 ORIGINAL_ITEM_CATEGORIES = {
-    "T16 Maps": [
-        "T16 Map (white)",
-        "T16 Map (rare)",
-        "T16 Map (corrupted)",
-        "T16 Map (corrupted, quantity)"
-    ],
     "Waystones": [
         "Waystone EXP + Delirious",
         "Waystone EXP 35%",
@@ -35,24 +29,19 @@ ORIGINAL_ITEM_CATEGORIES = {
 ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
 
 CATEGORY_COLORS = {
-    "T16 Maps": "#e2e2e2",
-    "Waystones": "#FFD700",
-    "White Item Bases": "#FFFFFF",
-    "Tablets": "#AA66CC",
-    "Various": "#42A5F5",
+    "Waystones": "#FFD700",   # Gold/Yellow
+    "White Item Bases": "#FFFFFF",      # White
+    "Tablets": "#AA66CC",     # Purple
+    "Various": "#42A5F5",     # Blue
 }
 
 ITEM_COLORS = {
-    "T16 Map (white)": "#e2e2e2",
-    "T16 Map (rare)": "#ffe266",
-    "T16 Map (corrupted)": "#ff8787",
-    "T16 Map (corrupted, quantity)": "#ffcc29",
+    "Breach ring level 82": "#D6A4FF",   # purple
+    "Stellar Amulet": "#FFD700",         # gold/yellow
+    "Heavy Belt": "#A4FFA3",             # greenish
     "Waystone EXP + Delirious": "#FF6961",
     "Waystone EXP 35%": "#FFB347",
     "Waystone EXP": "#FFB347",
-    "Stellar Amulet": "#FFD700",
-    "Breach ring level 82": "#D6A4FF",
-    "Heavy Belt": "#A4FFA3",
     "Tablet Exp 9%+10% (random)": "#7FDBFF",
     "Quantity Tablet (6%+)": "#B0E0E6",
     "Grand Project Tablet": "#FFDCB9",
@@ -148,12 +137,12 @@ def load_targets():
             divines[item] = 0
         if item not in links:
             links[item] = ""
-    return targets, divines, links, bank_buy_pct, ws
+    return targets, divines, links, bank_buy_pct, ws  # <-- CHANGED
 
-def save_targets(targets, divines, links, bank_buy_pct, ws):
+def save_targets(targets, divines, links, bank_buy_pct, ws):  # <-- CHANGED
     data_rows = [{"Item": item, "Target": targets[item], "Divines": divines[item], "Link": links[item]} for item in ALL_ITEMS]
     # Add settings row
-    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": "", "Link": ""})
+    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": "", "Link": ""})  # <-- CHANGED
     df = pd.DataFrame(data_rows)
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
@@ -218,11 +207,11 @@ else:
 
 # ---- DATA LOADING ----
 df = load_data()
-targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()
+targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()  # <-- CHANGED
 
 # ---- BANK BUY PCT PERSISTENCE ----
-if 'bank_buy_pct' not in st.session_state:
-    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded
+if 'bank_buy_pct' not in st.session_state:  # <-- CHANGED
+    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded  # <-- CHANGED
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
@@ -240,7 +229,7 @@ with st.sidebar:
         changed = False
         if bank_buy_pct != st.session_state['bank_buy_pct']:
             st.session_state['bank_buy_pct'] = bank_buy_pct
-            changed = True
+            changed = True  # <-- CHANGED: signal update
         new_targets = {}
         new_divines = {}
         new_links = {}
@@ -273,7 +262,7 @@ with st.sidebar:
             new_divines[item] = div
             new_links[item] = link
         if st.button("Save Targets, Values, and Links") and changed:
-            save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)
+            save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)  # <-- CHANGED
             st.success("Targets, Divine values, Trade Links and Bank % saved! Refresh the page to see updates.")
             st.stop()
     else:
@@ -323,19 +312,13 @@ st.markdown("---")
 # ---- DEPOSITS OVERVIEW ----
 st.header("Deposits Overview")
 
-bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)
+bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)  # <-- CHANGED
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     color = CATEGORY_COLORS.get(cat, "#FFD700")
-    # Add warning for T16 Maps
-    warning_html = ""
-    if cat == "T16 Maps":
-        warning_html = "<span style='color:#ff5353; font-weight:bold; font-size:1em; margin-left:18px;'>&#9888; no ignited ground / temporal chains</span>"
     st.markdown(f"""
-    <div style='margin-top: 38px; display:flex; align-items:center;'>
-        <h2 style="color:{color}; font-weight:bold; margin-bottom: 14px; display:inline-block;">{cat}</h2>
-        {warning_html}
-    </div>
+    <div style='margin-top: 38px;'></div>
+    <h2 style="color:{color}; font-weight:bold; margin-bottom: 14px;">{cat}</h2>
     """, unsafe_allow_html=True)
     # Calculate and sort item totals descending
     item_totals = []
@@ -351,7 +334,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_total = (total / target * divine_val) if target > 0 else 0
         # Calculate instant sell price for ONE item
         if target > 0:
-            instant_sell_price = (divine_val / target) * bank_buy_pct / 100
+            instant_sell_price = (divine_val / target) * bank_buy_pct / 100  # <-- CHANGED
         else:
             instant_sell_price = 0
 
