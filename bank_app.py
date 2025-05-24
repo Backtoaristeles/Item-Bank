@@ -426,4 +426,30 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
 st.markdown("---")
 
 # ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
-if
+if st.session_state['is_editor']:
+    st.header("Delete Deposits (permanently)")
+    if len(df):
+        for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
+            color = CATEGORY_COLORS.get(cat, "#FFD700")
+            st.markdown(f'<h3 style="color:{color}; font-weight:bold;">{cat}</h3>', unsafe_allow_html=True)
+            cols = st.columns(len(items))
+            for idx, item in enumerate(items):
+                item_rows = df[df["Item"] == item].reset_index()
+                with cols[idx]:
+                    with st.expander(f"{item} ({len(item_rows)} deposits)", expanded=False):
+                        if not item_rows.empty:
+                            for i, row in item_rows.iterrows():
+                                c = st.columns([2, 2, 2, 1])
+                                c[0].write(row['User'])
+                                c[1].write(row['Item'])
+                                c[2].write(row['Quantity'])
+                                delete_button = c[3].button("Delete", key=f"delete_{row['index']}_{item}")
+                                if delete_button:
+                                    df = df.drop(row['index']).reset_index(drop=True)
+                                    save_data(df)
+                                    st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
+                                    st.rerun()
+                        else:
+                            st.info("No deposits for this item.")
+    else:
+        st.info("No deposits yet!")
