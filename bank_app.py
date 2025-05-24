@@ -93,10 +93,23 @@ def load_targets():
         ws = sh.add_worksheet(title=TARGETS_TAB, rows=50, cols=4)
         ws.append_row(["Item", "Target", "Divines", "Link"])
     df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
+
     targets = {}
     divines = {}
     links = {}
+    bank_buy_pct = DEFAULT_BANK_BUY_PCT
+
     if not df.empty and "Item" in df.columns:
+        # Check if we have a settings row
+        settings_row = df[df["Item"] == "_SETTINGS"]
+        if not settings_row.empty:
+            try:
+                bank_buy_pct = int(float(settings_row.iloc[0]["Target"]))
+            except Exception:
+                bank_buy_pct = DEFAULT_BANK_BUY_PCT
+        # Filter out settings row from item loop
+        df = df[df["Item"] != "_SETTINGS"]
+
         if "Target" not in df.columns:
             df["Target"] = 100
         if "Divines" not in df.columns:
@@ -124,10 +137,13 @@ def load_targets():
             divines[item] = 0
         if item not in links:
             links[item] = ""
-    return targets, divines, links, ws
+    return targets, divines, links, bank_buy_pct, ws  # <-- CHANGED
 
-def save_targets(targets, divines, links, ws):
-    df = pd.DataFrame([{"Item": item, "Target": targets[item], "Divines": divines[item], "Link": links[item]} for item in ALL_ITEMS])
+def save_targets(targets, divines, links, bank_buy_pct, ws):  # <-- CHANGED
+    data_rows = [{"Item": item, "Target": targets[item], "Divines": divines[item], "Link": links[item]} for item in ALL_ITEMS]
+    # Add settings row
+    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": "", "Link": ""})  # <-- CHANGED
+    df = pd.DataFrame(data_rows)
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
 
@@ -191,7 +207,11 @@ else:
 
 # ---- DATA LOADING ----
 df = load_data()
-targets, divines, links, ws_targets = load_targets()
+targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()  # <-- CHANGED
+
+# ---- BANK BUY PCT PERSISTENCE ----
+if 'bank_buy_pct' not in st.session_state:  # <-- CHANGED
+    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded  # <-- CHANGED
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
@@ -199,9 +219,6 @@ with st.sidebar:
 
     # Only admins see and can set the Bank Buy %
     if st.session_state['is_editor']:
-        if 'bank_buy_pct' not in st.session_state:
-            st.session_state['bank_buy_pct'] = DEFAULT_BANK_BUY_PCT
-
         st.subheader("Bank Instant Buy Settings")
         bank_buy_pct = st.number_input(
             "Bank buy % of sell price (instant sell payout)",
@@ -209,11 +226,10 @@ with st.sidebar:
             value=st.session_state['bank_buy_pct'],
             key="bank_buy_pct_input"
         )
+        changed = False
         if bank_buy_pct != st.session_state['bank_buy_pct']:
             st.session_state['bank_buy_pct'] = bank_buy_pct
-            st.success("Bank buy % updated. All instant sell prices are now updated.")
-
-        changed = False
+            changed = True  # <-- CHANGED: signal update
         new_targets = {}
         new_divines = {}
         new_links = {}
@@ -246,8 +262,8 @@ with st.sidebar:
             new_divines[item] = div
             new_links[item] = link
         if st.button("Save Targets, Values, and Links") and changed:
-            save_targets(new_targets, new_divines, new_links, ws_targets)
-            st.success("Targets, Divine values, and Trade Links saved! Refresh the page to see updates.")
+            save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)  # <-- CHANGED
+            st.success("Targets, Divine values, Trade Links and Bank % saved! Refresh the page to see updates.")
             st.stop()
     else:
         for item in ALL_ITEMS:
@@ -296,7 +312,7 @@ st.markdown("---")
 # ---- DEPOSITS OVERVIEW ----
 st.header("Deposits Overview")
 
-bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)
+bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)  # <-- CHANGED
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     color = CATEGORY_COLORS.get(cat, "#FFD700")
@@ -318,7 +334,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_total = (total / target * divine_val) if target > 0 else 0
         # Calculate instant sell price for ONE item
         if target > 0:
-            instant_sell_price = (divine_val / target) * bank_buy_pct / 100
+            instant_sell_price = (divine_val / target) * bank_buy_pct / 100  # <-- CHANGED
         else:
             instant_sell_price = 0
 
