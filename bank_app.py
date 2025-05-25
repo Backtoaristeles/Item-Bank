@@ -137,12 +137,12 @@ def load_targets():
             divines[item] = 0
         if item not in links:
             links[item] = ""
-    return targets, divines, links, bank_buy_pct, ws  # <-- CHANGED
+    return targets, divines, links, bank_buy_pct, ws
 
-def save_targets(targets, divines, links, bank_buy_pct, ws):  # <-- CHANGED
+def save_targets(targets, divines, links, bank_buy_pct, ws):
     data_rows = [{"Item": item, "Target": targets[item], "Divines": divines[item], "Link": links[item]} for item in ALL_ITEMS]
     # Add settings row
-    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": "", "Link": ""})  # <-- CHANGED
+    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": "", "Link": ""})
     df = pd.DataFrame(data_rows)
     ws.clear()
     set_with_dataframe(ws, df, include_index=False)
@@ -206,18 +206,17 @@ else:
     st.caption("**Read only mode** (progress & deposit info only)")
 
 # ---- DATA LOADING ----
-df = load_data()
-targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()  # <-- CHANGED
+df = load_data()  # <--- always fresh load at the top!
+targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()
 
 # ---- BANK BUY PCT PERSISTENCE ----
-if 'bank_buy_pct' not in st.session_state:  # <-- CHANGED
-    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded  # <-- CHANGED
+if 'bank_buy_pct' not in st.session_state:
+    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded
 
 # ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
 
-    # Only admins see and can set the Bank Buy %
     if st.session_state['is_editor']:
         st.subheader("Bank Instant Buy Settings")
         bank_buy_pct = st.number_input(
@@ -229,7 +228,7 @@ with st.sidebar:
         changed = False
         if bank_buy_pct != st.session_state['bank_buy_pct']:
             st.session_state['bank_buy_pct'] = bank_buy_pct
-            changed = True  # <-- CHANGED: signal update
+            changed = True
         new_targets = {}
         new_divines = {}
         new_links = {}
@@ -262,7 +261,7 @@ with st.sidebar:
             new_divines[item] = div
             new_links[item] = link
         if st.button("Save Targets, Values, and Links") and changed:
-            save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)  # <-- CHANGED
+            save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)
             st.success("Targets, Divine values, Trade Links and Bank % saved! Refresh the page to see updates.")
             st.stop()
     else:
@@ -318,11 +317,22 @@ if st.session_state['is_editor']:
     if st.session_state.get('deposit_submitted', False) and not submitted:
         st.session_state['deposit_submitted'] = False
 
-# ---- DEPOSITS OVERVIEW ----
 st.markdown("---")
 st.header("Deposits Overview")
 
-bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)  # <-- CHANGED
+# ---- ADMIN BUTTON TO REMOVE ALL EXACT DUPLICATES ----
+if st.session_state['is_editor']:
+    with st.expander("Admin Maintenance Tools", expanded=False):
+        if st.button("Remove all exact duplicate deposits"):
+            num_before = len(df)
+            df_cleaned = df.drop_duplicates(subset=["User", "Item", "Quantity"], keep="first").reset_index(drop=True)
+            save_data(df_cleaned)
+            st.success(f"Removed {num_before - len(df_cleaned)} duplicate deposits. Data cleaned!")
+            st.write("Preview of cleaned data:")
+            st.dataframe(df_cleaned)
+            st.rerun()
+
+bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     color = CATEGORY_COLORS.get(cat, "#FFD700")
@@ -344,7 +354,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_total = (total / target * divine_val) if target > 0 else 0
         # Calculate instant sell price for ONE item
         if target > 0:
-            instant_sell_price = (divine_val / target) * bank_buy_pct / 100  # <-- CHANGED
+            instant_sell_price = (divine_val / target) * bank_buy_pct / 100
         else:
             instant_sell_price = 0
 
@@ -417,16 +427,6 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             )
 
 st.markdown("---")
-
-# ---- ADMIN BUTTON TO REMOVE ALL EXACT DUPLICATES ----
-if st.session_state['is_editor']:
-    with st.expander("Admin Maintenance Tools", expanded=False):
-        if st.button("Remove all exact duplicate deposits"):
-            num_before = len(df)
-            df = df.drop_duplicates(subset=["User", "Item", "Quantity"], keep="first").reset_index(drop=True)
-            save_data(df)
-            st.success(f"Removed {num_before - len(df)} duplicate deposits. Data cleaned!")
-            st.rerun()
 
 # ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
 if st.session_state['is_editor']:
