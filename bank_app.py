@@ -81,6 +81,9 @@ def load_data():
         df = df[expected_cols]
     else:
         df = pd.DataFrame(columns=["User", "Item", "Quantity"])
+    # --- STRIP SPACES AND CLEAN DATA ---
+    df["User"] = df["User"].astype(str).str.strip()
+    df["Item"] = df["Item"].astype(str).str.strip()
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     return df
 
@@ -148,6 +151,10 @@ def save_targets(targets, divines, links, bank_buy_pct, ws):
     set_with_dataframe(ws, df, include_index=False)
 
 def save_data(df):
+    # --- STRIP SPACES BEFORE SAVING ---
+    df["User"] = df["User"].astype(str).str.strip()
+    df["Item"] = df["Item"].astype(str).str.strip()
+    df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     gc = get_gsheet_client()
     sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
     set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
@@ -206,7 +213,7 @@ else:
     st.caption("**Read only mode** (progress & deposit info only)")
 
 # ---- DATA LOADING ----
-df = load_data()  # <--- always fresh load at the top!
+df = load_data()
 targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()
 
 # ---- BANK BUY PCT PERSISTENCE ----
@@ -217,6 +224,7 @@ if 'bank_buy_pct' not in st.session_state:
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
 
+    # Only admins see and can set the Bank Buy %
     if st.session_state['is_editor']:
         st.subheader("Bank Instant Buy Settings")
         bank_buy_pct = st.number_input(
@@ -290,10 +298,15 @@ if st.session_state['is_editor']:
 
         submitted = st.form_submit_button("Add Deposit(s)")
         if submitted and user and not st.session_state['deposit_submitted']:
+            # --- CLEAN DATA BEFORE CHECKING ---
+            df["User"] = df["User"].astype(str).str.strip()
+            df["Item"] = df["Item"].astype(str).str.strip()
+            df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
+            user_clean = user.strip()
             new_rows = []
             for item, qty in item_qtys.items():
                 if qty > 0:
-                    new_row = {"User": user.strip(), "Item": item, "Quantity": int(qty)}
+                    new_row = {"User": user_clean, "Item": item.strip(), "Quantity": int(qty)}
                     # Prevent adding if an exact same row exists
                     is_duplicate = (
                         ((df["User"] == new_row["User"]) &
@@ -301,14 +314,14 @@ if st.session_state['is_editor']:
                          (df["Quantity"] == new_row["Quantity"])).any()
                     )
                     if is_duplicate:
-                        st.warning(f"Duplicate deposit blocked for {user}, {item}, {qty}.")
+                        st.warning(f"Duplicate deposit blocked for {user_clean}, {item.strip()}, {qty}.")
                         continue
                     new_rows.append(new_row)
             if new_rows:
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df)
                 st.session_state['deposit_submitted'] = True
-                st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
+                st.success(f"Deposits added for {user_clean}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.rerun()
             else:
                 st.warning("Please enter at least one item with quantity > 0 (and no exact duplicate).")
@@ -317,20 +330,9 @@ if st.session_state['is_editor']:
     if st.session_state.get('deposit_submitted', False) and not submitted:
         st.session_state['deposit_submitted'] = False
 
+# ---- DEPOSITS OVERVIEW ----
 st.markdown("---")
 st.header("Deposits Overview")
-
-# ---- ADMIN BUTTON TO REMOVE ALL EXACT DUPLICATES ----
-if st.session_state['is_editor']:
-    with st.expander("Admin Maintenance Tools", expanded=False):
-        if st.button("Remove all exact duplicate deposits"):
-            num_before = len(df)
-            df_cleaned = df.drop_duplicates(subset=["User", "Item", "Quantity"], keep="first").reset_index(drop=True)
-            save_data(df_cleaned)
-            st.success(f"Removed {num_before - len(df_cleaned)} duplicate deposits. Data cleaned!")
-            st.write("Preview of cleaned data:")
-            st.dataframe(df_cleaned)
-            st.rerun()
 
 bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)
 
@@ -427,6 +429,20 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             )
 
 st.markdown("---")
+
+# ---- ADMIN BUTTON TO REMOVE ALL EXACT DUPLICATES ----
+if st.session_state['is_editor']:
+    with st.expander("Admin Maintenance Tools", expanded=False):
+        if st.button("Remove all exact duplicate deposits"):
+            num_before = len(df)
+            # --- STRIP SPACES BEFORE DEDUPLICATION ---
+            df["User"] = df["User"].astype(str).str.strip()
+            df["Item"] = df["Item"].astype(str).str.strip()
+            df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
+            df = df.drop_duplicates(subset=["User", "Item", "Quantity"], keep="first").reset_index(drop=True)
+            save_data(df)
+            st.success(f"Removed {num_before - len(df)} duplicate deposits. Data cleaned!")
+            st.rerun()
 
 # ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
 if st.session_state['is_editor']:
