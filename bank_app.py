@@ -307,7 +307,7 @@ if st.session_state['is_editor']:
             for item, qty in item_qtys.items():
                 if qty > 0:
                     new_row = {"User": user_clean, "Item": item.strip(), "Quantity": int(qty)}
-                    # Prevent adding if an exact same row exists
+                    # Prevent adding if an exact same row exists (EVER)
                     is_duplicate = (
                         ((df["User"] == new_row["User"]) &
                          (df["Item"] == new_row["Item"]) &
@@ -429,20 +429,6 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             )
 
 st.markdown("---")
-
-# ---- ADMIN BUTTON TO REMOVE ALL EXACT DUPLICATES ----
-if st.session_state['is_editor']:
-    with st.expander("Admin Maintenance Tools", expanded=False):
-        if st.button("Remove all exact duplicate deposits"):
-            num_before = len(df)
-            # --- STRIP SPACES BEFORE DEDUPLICATION ---
-            df["User"] = df["User"].astype(str).str.strip()
-            df["Item"] = df["Item"].astype(str).str.strip()
-            df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
-            df = df.drop_duplicates(subset=["User", "Item", "Quantity"], keep="first").reset_index(drop=True)
-            save_data(df)
-            st.success(f"Removed {num_before - len(df)} duplicate deposits. Data cleaned!")
-            st.rerun()
 
 # ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
 if st.session_state['is_editor']:
