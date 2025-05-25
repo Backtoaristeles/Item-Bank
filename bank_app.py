@@ -275,7 +275,7 @@ with st.sidebar:
                 unsafe_allow_html=True
             )
 
-# --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY) ---
+# --- MULTI-ITEM DEPOSIT FORM (EDITORS ONLY, PREVENT DUPLICATES) ---
 if st.session_state['is_editor']:
     if 'deposit_submitted' not in st.session_state:
         st.session_state['deposit_submitted'] = False
@@ -288,12 +288,23 @@ if st.session_state['is_editor']:
         for i, item in enumerate(ALL_ITEMS):
             col = col1 if i % 2 == 0 else col2
             item_qtys[item] = col.number_input(f"{item}", min_value=0, step=1, key=f"add_{item}")
+
         submitted = st.form_submit_button("Add Deposit(s)")
         if submitted and user and not st.session_state['deposit_submitted']:
             new_rows = []
             for item, qty in item_qtys.items():
                 if qty > 0:
-                    new_rows.append({"User": user.strip(), "Item": item, "Quantity": int(qty)})
+                    new_row = {"User": user.strip(), "Item": item, "Quantity": int(qty)}
+                    # Prevent adding if an exact same row exists
+                    is_duplicate = (
+                        ((df["User"] == new_row["User"]) &
+                         (df["Item"] == new_row["Item"]) &
+                         (df["Quantity"] == new_row["Quantity"])).any()
+                    )
+                    if is_duplicate:
+                        st.warning(f"Duplicate deposit blocked for {user}, {item}, {qty}.")
+                        continue
+                    new_rows.append(new_row)
             if new_rows:
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df)
@@ -301,15 +312,14 @@ if st.session_state['is_editor']:
                 st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.rerun()
             else:
-                st.warning("Please enter at least one item with quantity > 0.")
+                st.warning("Please enter at least one item with quantity > 0 (and no exact duplicate).")
 
     # Reset anti-double-submit flag when not submitting
     if st.session_state.get('deposit_submitted', False) and not submitted:
         st.session_state['deposit_submitted'] = False
 
-st.markdown("---")
-
 # ---- DEPOSITS OVERVIEW ----
+st.markdown("---")
 st.header("Deposits Overview")
 
 bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)  # <-- CHANGED
@@ -407,6 +417,16 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             )
 
 st.markdown("---")
+
+# ---- ADMIN BUTTON TO REMOVE ALL EXACT DUPLICATES ----
+if st.session_state['is_editor']:
+    with st.expander("Admin Maintenance Tools", expanded=False):
+        if st.button("Remove all exact duplicate deposits"):
+            num_before = len(df)
+            df = df.drop_duplicates(subset=["User", "Item", "Quantity"], keep="first").reset_index(drop=True)
+            save_data(df)
+            st.success(f"Removed {num_before - len(df)} duplicate deposits. Data cleaned!")
+            st.rerun()
 
 # ---- DELETE BUTTONS PER ROW (EDITORS ONLY), GROUPED BY ITEM IN EXPANDERS ----
 if st.session_state['is_editor']:
