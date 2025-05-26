@@ -7,7 +7,7 @@ import math
 
 # ---- CONFIGURATION ----
 ORIGINAL_ITEM_CATEGORIES = {
-    "Waystones": [
+    "T16 Waystones": [   # Changed!
         "Waystone EXP + Delirious",
         "Waystone EXP 35%",
         "Waystone EXP"
@@ -29,16 +29,16 @@ ORIGINAL_ITEM_CATEGORIES = {
 ALL_ITEMS = sum(ORIGINAL_ITEM_CATEGORIES.values(), [])
 
 CATEGORY_COLORS = {
-    "Waystones": "#FFD700",   # Gold/Yellow
-    "White Item Bases": "#FFFFFF",      # White
-    "Tablets": "#AA66CC",     # Purple
-    "Various": "#42A5F5",     # Blue
+    "T16 Waystones": "#FFD700",         # Gold/Yellow (updated key!)
+    "White Item Bases": "#EEEEEE",      # Light gray for visibility
+    "Tablets": "#AA66CC",               # Purple
+    "Various": "#42A5F5",               # Blue
 }
 
 ITEM_COLORS = {
     "Breach ring level 82": "#D6A4FF",   # purple
     "Stellar Amulet": "#FFD700",         # gold/yellow
-    "Heavy Belt": "#A4FFA3",             # greenish
+    "Heavy Belt": "#EEEEEE",             # light gray
     "Waystone EXP + Delirious": "#FF6961",
     "Waystone EXP 35%": "#FFB347",
     "Waystone EXP": "#FFB347",
@@ -47,8 +47,9 @@ ITEM_COLORS = {
     "Grand Project Tablet": "#FFDCB9",
     "Logbook level 79-80": "#42A5F5",
 }
+
 def get_item_color(item):
-    return ITEM_COLORS.get(item, "#FFF")
+    return ITEM_COLORS.get(item, "#EEEEEE")  # Fallback to light gray
 
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
@@ -161,6 +162,12 @@ def save_data(df):
 
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
+
+# ---- INFO BOX AT THE TOP ----
+st.info(
+    "💡 **Note:** Just because an item is FULL (green bar) doesn't mean you can't sell or deposit more of that item! "
+    "**FULL simply means it's being prepared for sale—**you can keep depositing and will receive your payout as usual!**"
+)
 
 # ---- ADMIN LOGIN STATE HANDLING ----
 if 'is_editor' not in st.session_state:
@@ -369,6 +376,9 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
             extra_info = (f"<span style='margin-left:22px; color:#AAA;'>"
                           f"[Stack = {divine_val:.2f} Divines → Current Value ≈ {divine_total:.2f} Divines]</span>")
 
+        # --- T16 prefix for waystone items ---
+        item_display = f"T16 {item}" if cat == "T16 Waystones" else item
+
         st.markdown(
             f"""
             <div style='
@@ -381,7 +391,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
                 background: #181818;
             '>
                 <span style='font-weight:bold; color:{item_color}; font-size:1.18em; letter-spacing:0.5px;'>
-                    [{item}]
+                    [{item_display}]
                 </span>
                 <span style='margin-left:22px; font-size:1.12em; color:#FFF;'>
                     <b>Deposited:</b> {total} / {target}
@@ -396,8 +406,9 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         if total >= target:
             st.success(f"✅ {total}/{target} – Target reached!")
             st.markdown("""
-            <div style='height:22px; width:100%; background:#22c55e; border-radius:7px; display:flex; align-items:center;'>
-                <span style='margin-left:10px; color:white; font-weight:bold;'>FULL</span>
+            <div style='height:22px; width:100%; background:#22c55e; border-radius:7px; display:flex; align-items:center; justify-content:space-between; padding:0 12px;'>
+                <span style='color:white; font-weight:bold;'>FULL</span>
+                <span style='color:white; font-size:0.98em; margin-left:15px;'>You can still deposit/sell more! Green means this batch is going up for sale soon, so payouts will be processed shortly.</span>
             </div>
             """, unsafe_allow_html=True)
         else:
