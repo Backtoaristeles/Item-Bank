@@ -53,6 +53,7 @@ def get_item_color(item):
 SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
+ADMIN_LOGS_TAB = "AdminLogs"
 
 DEFAULT_BANK_BUY_PCT = 80   # percent
 
@@ -100,16 +101,13 @@ def load_targets():
     bank_buy_pct = DEFAULT_BANK_BUY_PCT
 
     if not df.empty and "Item" in df.columns:
-        # Check if we have a settings row
         settings_row = df[df["Item"] == "_SETTINGS"]
         if not settings_row.empty:
             try:
                 bank_buy_pct = int(float(settings_row.iloc[0]["Target"]))
             except Exception:
                 bank_buy_pct = DEFAULT_BANK_BUY_PCT
-        # Filter out settings row from item loop
         df = df[df["Item"] != "_SETTINGS"]
-
         if "Target" not in df.columns:
             df["Target"] = 100
         if "Divines" not in df.columns:
@@ -151,6 +149,29 @@ def save_data(df):
     gc = get_gsheet_client()
     sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
     set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
+
+# ---- ADMIN LOGGING FUNCTIONS ----
+def append_admin_log(action, details=""):
+    gc = get_gsheet_client()
+    try:
+        ws = gc.open(SHEET_NAME).worksheet(ADMIN_LOGS_TAB)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = gc.open(SHEET_NAME).add_worksheet(title=ADMIN_LOGS_TAB, rows=100, cols=3)
+        ws.append_row(["Timestamp", "AdminAction", "Details"])
+    timestamp = pd.Timestamp.now(tz='Europe/Berlin').strftime("%Y-%m-%d %H:%M:%S")
+    ws.append_row([timestamp, action, details])
+
+def load_admin_logs(n=20):
+    gc = get_gsheet_client()
+    try:
+        ws = gc.open(SHEET_NAME).worksheet(ADMIN_LOGS_TAB)
+        logs = get_as_dataframe(ws, evaluate_formulas=True).dropna(how='all')
+        logs = logs.fillna("")
+        if not logs.empty:
+            return logs.tail(n).iloc[::-1]  # Show last n, newest on top
+    except Exception:
+        return pd.DataFrame(columns=["Timestamp", "AdminAction", "Details"])
+    return pd.DataFrame(columns=["Timestamp", "AdminAction", "Details"])
 
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
@@ -263,6 +284,7 @@ with st.sidebar:
             new_links[item] = link
         if st.button("Save Targets, Values, and Links") and changed:
             save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)  # <-- CHANGED
+            append_admin_log("Edit Targets/Values/Links", "Admin updated targets, values, or links.")
             st.success("Targets, Divine values, Trade Links and Bank % saved! Refresh the page to see updates.")
             st.stop()
     else:
@@ -297,6 +319,7 @@ if st.session_state['is_editor']:
             if new_rows:
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df)
+                append_admin_log("Deposit", f"{user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.session_state['deposit_submitted'] = True
                 st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.rerun()
@@ -430,9 +453,20 @@ if st.session_state['is_editor']:
                                 if delete_button:
                                     df = df.drop(row['index']).reset_index(drop=True)
                                     save_data(df)
+                                    append_admin_log("Delete", f"{row['User']} - {row['Item']} ({row['Quantity']})")
                                     st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
                                     st.rerun()
                         else:
                             st.info("No deposits for this item.")
     else:
         st.info("No deposits yet!")
+
+# ---- SHOW ADMIN LOGS ----
+if st.session_state['is_editor']:
+    st.markdown("---")
+    st.header("Admin Logs (Last 20 actions)")
+    logs = load_admin_logs(n=20)
+    if logs.empty:
+        st.info("No admin logs yet.")
+    else:
+        st.dataframe(logs, use_container_width=True, hide_index=True)
