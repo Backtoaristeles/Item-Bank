@@ -54,6 +54,7 @@ SHEET_NAME = "poe_item_bank"
 SHEET_TAB = "Sheet1"
 TARGETS_TAB = "Targets"
 ADMIN_LOGS_TAB = "AdminLogs"
+PENDING_DUPES_TAB = "PendingDupes"
 
 DEFAULT_BANK_BUY_PCT = 80   # percent
 
@@ -85,19 +86,23 @@ def load_data():
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
     return df
 
+def save_data(df):
+    gc = get_gsheet_client()
+    sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
+    set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
+
 def load_targets():
     gc = get_gsheet_client()
     sh = gc.open(SHEET_NAME)
     try:
         ws = sh.worksheet(TARGETS_TAB)
     except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=TARGETS_TAB, rows=50, cols=4)
-        ws.append_row(["Item", "Target", "Divines", "Link"])
+        ws = sh.add_worksheet(title=TARGETS_TAB, rows=50, cols=3)
+        ws.append_row(["Item", "Target", "Divines"])
     df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str).dropna(how='all')
 
     targets = {}
     divines = {}
-    links = {}
     bank_buy_pct = DEFAULT_BANK_BUY_PCT
 
     if not df.empty and "Item" in df.columns:
@@ -112,8 +117,6 @@ def load_targets():
             df["Target"] = 100
         if "Divines" not in df.columns:
             df["Divines"] = ""
-        if "Link" not in df.columns:
-            df["Link"] = ""
         for idx, row in df.iterrows():
             item = row["Item"]
             try:
@@ -124,31 +127,12 @@ def load_targets():
                 divines[item] = float(row["Divines"]) if str(row["Divines"]).strip() != "" else 0
             except Exception:
                 divines[item] = 0
-            try:
-                links[item] = row["Link"]
-            except Exception:
-                links[item] = ""
     for item in ALL_ITEMS:
         if item not in targets:
             targets[item] = 100
         if item not in divines:
             divines[item] = 0
-        if item not in links:
-            links[item] = ""
-    return targets, divines, links, bank_buy_pct, ws  # <-- CHANGED
-
-def save_targets(targets, divines, links, bank_buy_pct, ws):  # <-- CHANGED
-    data_rows = [{"Item": item, "Target": targets[item], "Divines": divines[item], "Link": links[item]} for item in ALL_ITEMS]
-    # Add settings row
-    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": "", "Link": ""})  # <-- CHANGED
-    df = pd.DataFrame(data_rows)
-    ws.clear()
-    set_with_dataframe(ws, df, include_index=False)
-
-def save_data(df):
-    gc = get_gsheet_client()
-    sheet = gc.open(SHEET_NAME).worksheet(SHEET_TAB)
-    set_with_dataframe(sheet, df[["User", "Item", "Quantity"]], include_index=False)
+    return targets, divines, bank_buy_pct, ws
 
 # ---- ADMIN LOGGING FUNCTIONS ----
 def append_admin_log(action, details=""):
@@ -168,10 +152,43 @@ def load_admin_logs(n=20):
         logs = get_as_dataframe(ws, evaluate_formulas=True).dropna(how='all')
         logs = logs.fillna("")
         if not logs.empty:
-            return logs.tail(n).iloc[::-1]  # Show last n, newest on top
+            return logs.tail(n).iloc[::-1]
     except Exception:
         return pd.DataFrame(columns=["Timestamp", "AdminAction", "Details"])
     return pd.DataFrame(columns=["Timestamp", "AdminAction", "Details"])
+
+# ---- DUPLICATE HANDLING ----
+def append_pending_dupe(user, item, quantity):
+    gc = get_gsheet_client()
+    try:
+        ws = gc.open(SHEET_NAME).worksheet(PENDING_DUPES_TAB)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = gc.open(SHEET_NAME).add_worksheet(title=PENDING_DUPES_TAB, rows=100, cols=3)
+        ws.append_row(["User", "Item", "Quantity"])
+    ws.append_row([user, item, quantity])
+
+def load_pending_dupes():
+    gc = get_gsheet_client()
+    try:
+        ws = gc.open(SHEET_NAME).worksheet(PENDING_DUPES_TAB)
+        df = get_as_dataframe(ws, evaluate_formulas=True, dtype=str)
+        df = df.dropna(how='all')
+        if not df.empty:
+            df = df.fillna("")
+            expected_cols = ["User", "Item", "Quantity"]
+            for col in expected_cols:
+                if col not in df.columns:
+                    df[col] = ""
+            df = df[expected_cols]
+            df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0).astype(int)
+        else:
+            df = pd.DataFrame(columns=["User", "Item", "Quantity"])
+        return df, ws
+    except Exception:
+        return pd.DataFrame(columns=["User", "Item", "Quantity"]), None
+
+def remove_pending_dupe(ws, row_idx):
+    ws.delete_rows(row_idx+2)  # +2: 1 for header, 1-based index
 
 st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
 st.title("PoE Bulk Item Banking App")
@@ -228,17 +245,13 @@ else:
 
 # ---- DATA LOADING ----
 df = load_data()
-targets, divines, links, bank_buy_pct_loaded, ws_targets = load_targets()  # <-- CHANGED
+targets, divines, bank_buy_pct_loaded, ws_targets = load_targets()
 
-# ---- BANK BUY PCT PERSISTENCE ----
-if 'bank_buy_pct' not in st.session_state:  # <-- CHANGED
-    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded  # <-- CHANGED
+if 'bank_buy_pct' not in st.session_state:
+    st.session_state['bank_buy_pct'] = bank_buy_pct_loaded
 
-# ---- SETTINGS SIDEBAR ----
 with st.sidebar:
     st.header("Per-Item Targets & Divine Value")
-
-    # Only admins see and can set the Bank Buy %
     if st.session_state['is_editor']:
         st.subheader("Bank Instant Buy Settings")
         bank_buy_pct = st.number_input(
@@ -250,11 +263,10 @@ with st.sidebar:
         changed = False
         if bank_buy_pct != st.session_state['bank_buy_pct']:
             st.session_state['bank_buy_pct'] = bank_buy_pct
-            changed = True  # <-- CHANGED: signal update
+            changed = True
         new_targets = {}
         new_divines = {}
-        new_links = {}
-        st.subheader("Edit Targets, Values, and Trade Links")
+        st.subheader("Edit Targets and Values")
         for item in ALL_ITEMS:
             cols = st.columns([2, 2])
             tgt = cols[0].number_input(
@@ -272,20 +284,14 @@ with st.sidebar:
                 format="%.2f",
                 key=f"divine_{item}"
             )
-            link = st.text_input(
-                f"{item} trade link",
-                value=links.get(item, ""),
-                key=f"link_{item}"
-            )
-            if tgt != targets[item] or div != divines[item] or link != links[item]:
+            if tgt != targets[item] or div != divines[item]:
                 changed = True
             new_targets[item] = tgt
             new_divines[item] = div
-            new_links[item] = link
-        if st.button("Save Targets, Values, and Links") and changed:
-            save_targets(new_targets, new_divines, new_links, st.session_state['bank_buy_pct'], ws_targets)  # <-- CHANGED
-            append_admin_log("Edit Targets/Values/Links", "Admin updated targets, values, or links.")
-            st.success("Targets, Divine values, Trade Links and Bank % saved! Refresh the page to see updates.")
+        if st.button("Save Targets and Values") and changed:
+            save_targets(new_targets, new_divines, st.session_state['bank_buy_pct'], ws_targets)
+            append_admin_log("Edit Targets/Values", "Admin updated targets or values.")
+            st.success("Targets, Divine values and Bank % saved! Refresh the page to see updates.")
             st.stop()
     else:
         for item in ALL_ITEMS:
@@ -315,7 +321,16 @@ if st.session_state['is_editor']:
             new_rows = []
             for item, qty in item_qtys.items():
                 if qty > 0:
-                    new_rows.append({"User": user.strip(), "Item": item, "Quantity": int(qty)})
+                    # DUPLICATE DETECTION
+                    is_duplicate = not df[
+                        (df["User"].str.lower() == user.strip().lower()) &
+                        (df["Item"] == item) &
+                        (df["Quantity"] == int(qty))
+                    ].empty
+                    if is_duplicate:
+                        append_pending_dupe(user.strip(), item, int(qty))
+                    else:
+                        new_rows.append({"User": user.strip(), "Item": item, "Quantity": int(qty)})
             if new_rows:
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df)
@@ -323,6 +338,8 @@ if st.session_state['is_editor']:
                 st.session_state['deposit_submitted'] = True
                 st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.rerun()
+            elif any(item_qtys[item] > 0 for item in item_qtys):
+                st.warning("Duplicate offer detected! Please confirm it in the admin panel below.")
             else:
                 st.warning("Please enter at least one item with quantity > 0.")
 
@@ -332,10 +349,34 @@ if st.session_state['is_editor']:
 
 st.markdown("---")
 
+# ---- DUPLICATE OFFERS ADMIN PANEL ----
+if st.session_state['is_editor']:
+    st.header("Pending Duplicate Offers (confirm to add)")
+    pending_dupes, ws_pending = load_pending_dupes()
+    if not pending_dupes.empty and ws_pending is not None:
+        for idx, row in pending_dupes.iterrows():
+            c = st.columns([2, 2, 2, 1])
+            c[0].write(row['User'])
+            c[1].write(row['Item'])
+            c[2].write(row['Quantity'])
+            if c[3].button("Confirm", key=f"confirm_dupe_{idx}"):
+                # Move to real deposits
+                new_row = {"User": row["User"], "Item": row["Item"], "Quantity": row["Quantity"]}
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                save_data(df)
+                remove_pending_dupe(ws_pending, idx)
+                append_admin_log("Confirm Duplicate", f"{row['User']} - {row['Item']} ({row['Quantity']})")
+                st.success(f"Duplicate offer confirmed and added for {row['User']} - {row['Item']} ({row['Quantity']})")
+                st.rerun()
+    else:
+        st.info("No pending duplicate offers.")
+
+st.markdown("---")
+
 # ---- DEPOSITS OVERVIEW ----
 st.header("Deposits Overview")
 
-bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)  # <-- CHANGED
+bank_buy_pct = st.session_state.get('bank_buy_pct', DEFAULT_BANK_BUY_PCT)
 
 for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     color = CATEGORY_COLORS.get(cat, "#FFD700")
@@ -357,7 +398,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         divine_total = (total / target * divine_val) if target > 0 else 0
         # Calculate instant sell price for ONE item
         if target > 0:
-            instant_sell_price = (divine_val / target) * bank_buy_pct / 100  # <-- CHANGED
+            instant_sell_price = (divine_val / target) * bank_buy_pct / 100
         else:
             instant_sell_price = 0
 
