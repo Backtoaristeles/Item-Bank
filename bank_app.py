@@ -338,26 +338,41 @@ if st.session_state['is_editor']:
             item_qtys[item] = col.number_input(f"{item}", min_value=0, step=1, key=f"add_{item}")
         submitted = st.form_submit_button("Add Deposit(s)")
         if submitted and user and not st.session_state['deposit_submitted']:
+            # --------- RACE-SAFE DUPLICATE DETECTION & DEPOSIT ADDITION ---------
+            df_latest = load_data()
             new_rows = []
             for item, qty in item_qtys.items():
                 if qty > 0:
-                    # DUPLICATE DETECTION
-                    is_duplicate = not df[
-                        (df["User"].str.lower() == user.strip().lower()) &
-                        (df["Item"] == item) &
-                        (df["Quantity"] == int(qty))
+                    is_duplicate = not df_latest[
+                        (df_latest["User"].str.lower() == user.strip().lower()) &
+                        (df_latest["Item"] == item) &
+                        (df_latest["Quantity"] == int(qty))
                     ].empty
                     if is_duplicate:
                         append_pending_dupe(user.strip(), item, int(qty))
                     else:
                         new_rows.append({"User": user.strip(), "Item": item, "Quantity": int(qty)})
             if new_rows:
-                df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-                save_data(df)
-                append_admin_log("Deposit", f"{user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]), st.session_state['admin_user'])
-                st.session_state['deposit_submitted'] = True
-                st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
-                st.rerun()
+                # Before save, check AGAIN for race-safety
+                df_final = load_data()
+                actually_added = []
+                for row in new_rows:
+                    already_in = not df_final[
+                        (df_final["User"].str.lower() == row["User"].lower()) &
+                        (df_final["Item"] == row["Item"]) &
+                        (df_final["Quantity"] == row["Quantity"])
+                    ].empty
+                    if not already_in:
+                        df_final = pd.concat([df_final, pd.DataFrame([row])], ignore_index=True)
+                        actually_added.append(f"{row['Quantity']}x {row['Item']}")
+                        append_admin_log("Deposit", f"{row['User']}: {row['Quantity']}x {row['Item']}", st.session_state['admin_user'])
+                if actually_added:
+                    save_data(df_final)
+                    st.session_state['deposit_submitted'] = True
+                    st.success("Deposits added: " + ", ".join(actually_added))
+                    st.rerun()
+                else:
+                    st.info("All selected deposits were already present. No duplicates added.")
             elif any(item_qtys[item] > 0 for item in item_qtys):
                 st.warning("Duplicate offer detected! Please confirm it in the admin panel below.")
             else:
@@ -381,13 +396,22 @@ if st.session_state['is_editor']:
             confirm_key = f"confirm_dupe_{idx}"
             decline_key = f"decline_dupe_{idx}"
             if c[3].button("Confirm", key=confirm_key):
-                # Move to real deposits
-                new_row = {"User": row["User"], "Item": row["Item"], "Quantity": row["Quantity"]}
-                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                save_data(df)
+                # ------ RACE-SAFE: Check before confirming ------
+                df_latest = load_data()
+                already_in = not df_latest[
+                    (df_latest["User"].str.lower() == row["User"].strip().lower()) &
+                    (df_latest["Item"] == row["Item"]) &
+                    (df_latest["Quantity"] == int(row["Quantity"]))
+                ].empty
+                if already_in:
+                    st.info(f"Already exists: {row['User']} - {row['Item']} ({row['Quantity']})")
+                else:
+                    new_row = {"User": row["User"], "Item": row["Item"], "Quantity": row["Quantity"]}
+                    df_latest = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
+                    save_data(df_latest)
+                    append_admin_log("Confirm Duplicate", f"{row['User']} - {row['Item']} ({row['Quantity']})", st.session_state['admin_user'])
+                    st.success(f"Duplicate offer confirmed and added for {row['User']} - {row['Item']} ({row['Quantity']})")
                 remove_pending_dupe(ws_pending, idx)
-                append_admin_log("Confirm Duplicate", f"{row['User']} - {row['Item']} ({row['Quantity']})", st.session_state['admin_user'])
-                st.success(f"Duplicate offer confirmed and added for {row['User']} - {row['Item']} ({row['Quantity']})")
                 st.rerun()
             if c[4].button("Decline", key=decline_key):
                 remove_pending_dupe(ws_pending, idx)
