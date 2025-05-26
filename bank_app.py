@@ -133,11 +133,15 @@ else:
 
 # ----------- USER FILTER -----------
 st.markdown("### Benutzer-Filter")
-selected_user = st.selectbox("Wähle einen Benutzer aus, um nur dessen Verlauf zu sehen:", ["<Alle>"] + sorted(st.session_state["transactions"]["User"].unique()))
-if selected_user != "<Alle>":
-    user_tx = st.session_state["transactions"][st.session_state["transactions"]["User"] == selected_user]
-    st.write(f"**Transaktionen für {selected_user}:**")
-    st.dataframe(user_tx, use_container_width=True)
+if not st.session_state["transactions"].empty:
+    selected_user = st.selectbox(
+        "Wähle einen Benutzer aus, um nur dessen Verlauf zu sehen:",
+        ["<Alle>"] + sorted(st.session_state["transactions"]["User"].unique())
+    )
+    if selected_user != "<Alle>":
+        user_tx = st.session_state["transactions"][st.session_state["transactions"]["User"] == selected_user]
+        st.write(f"**Transaktionen für {selected_user}:**")
+        st.dataframe(user_tx, use_container_width=True)
 
 # ----------- ADMIN LOGIN -----------
 if not st.session_state["is_admin"]:
