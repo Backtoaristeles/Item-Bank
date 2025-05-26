@@ -5,6 +5,11 @@ from gspread_dataframe import set_with_dataframe, get_as_dataframe
 from google.oauth2.service_account import Credentials
 import math
 
+# --- HEADLINE & PAGE CONFIG ---
+st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
+st.title("PoE Bulk Item Banking App")
+st.caption("Bulk community banking for PoE item pooling and tracking")
+
 # ---- CONFIGURATION ----
 ORIGINAL_ITEM_CATEGORIES = {
     "Waystones": [
@@ -133,6 +138,13 @@ def load_targets():
         if item not in divines:
             divines[item] = 0
     return targets, divines, bank_buy_pct, ws
+
+def save_targets(targets, divines, bank_buy_pct, ws):  # links removed
+    data_rows = [{"Item": item, "Target": targets[item], "Divines": divines[item]} for item in ALL_ITEMS]
+    data_rows.append({"Item": "_SETTINGS", "Target": bank_buy_pct, "Divines": ""})
+    df = pd.DataFrame(data_rows)
+    ws.clear()
+    set_with_dataframe(ws, df, include_index=False)
 
 # ---- ADMIN LOGGING FUNCTIONS ----
 def append_admin_log(action, details="", admin_user=""):
