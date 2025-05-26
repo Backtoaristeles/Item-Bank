@@ -135,15 +135,15 @@ def load_targets():
     return targets, divines, bank_buy_pct, ws
 
 # ---- ADMIN LOGGING FUNCTIONS ----
-def append_admin_log(action, details=""):
+def append_admin_log(action, details="", admin_user=""):
     gc = get_gsheet_client()
     try:
         ws = gc.open(SHEET_NAME).worksheet(ADMIN_LOGS_TAB)
     except gspread.exceptions.WorksheetNotFound:
-        ws = gc.open(SHEET_NAME).add_worksheet(title=ADMIN_LOGS_TAB, rows=100, cols=3)
-        ws.append_row(["Timestamp", "AdminAction", "Details"])
+        ws = gc.open(SHEET_NAME).add_worksheet(title=ADMIN_LOGS_TAB, rows=100, cols=4)
+        ws.append_row(["Timestamp", "AdminUser", "AdminAction", "Details"])
     timestamp = pd.Timestamp.now(tz='Europe/Berlin').strftime("%Y-%m-%d %H:%M:%S")
-    ws.append_row([timestamp, action, details])
+    ws.append_row([timestamp, admin_user, action, details])
 
 def load_admin_logs(n=20):
     gc = get_gsheet_client()
@@ -154,8 +154,8 @@ def load_admin_logs(n=20):
         if not logs.empty:
             return logs.tail(n).iloc[::-1]
     except Exception:
-        return pd.DataFrame(columns=["Timestamp", "AdminAction", "Details"])
-    return pd.DataFrame(columns=["Timestamp", "AdminAction", "Details"])
+        return pd.DataFrame(columns=["Timestamp", "AdminUser", "AdminAction", "Details"])
+    return pd.DataFrame(columns=["Timestamp", "AdminUser", "AdminAction", "Details"])
 
 # ---- DUPLICATE HANDLING ----
 def append_pending_dupe(user, item, quantity):
@@ -190,9 +190,6 @@ def load_pending_dupes():
 def remove_pending_dupe(ws, row_idx):
     ws.delete_rows(row_idx+2)  # +2: 1 for header, 1-based index
 
-st.set_page_config(page_title="PoE Bulk Item Banking App", layout="wide")
-st.title("PoE Bulk Item Banking App")
-
 # ---- ADMIN LOGIN STATE HANDLING ----
 if 'is_editor' not in st.session_state:
     st.session_state['is_editor'] = False
@@ -200,11 +197,20 @@ if 'show_login' not in st.session_state:
     st.session_state['show_login'] = False
 if 'login_failed' not in st.session_state:
     st.session_state['login_failed'] = False
+if 'admin_user' not in st.session_state:
+    st.session_state['admin_user'] = ""
+
+ADMIN_USERS = {
+    "POEconomics": "ADMINPOECONOMICS",
+    "LT_Does_it_better": "LT_Does_it_betterPOECONOMICS",
+    "JESUS (Spector)": "JESUS (Spector)POECONOMICS"
+}
 
 def logout():
     st.session_state['is_editor'] = False
     st.session_state['show_login'] = False
     st.session_state['login_failed'] = False
+    st.session_state['admin_user'] = ""
 
 def show_admin_login():
     with st.form("admin_login"):
@@ -213,12 +219,14 @@ def show_admin_login():
         password = st.text_input("Password", type="password")
         submit = st.form_submit_button("Login")
         if submit:
-            if username == "Admin" and password == "AdminPOEconomics":
+            if username in ADMIN_USERS and password == ADMIN_USERS[username]:
                 st.session_state['is_editor'] = True
+                st.session_state['admin_user'] = username
                 st.session_state['show_login'] = False
                 st.session_state['login_failed'] = False
             else:
                 st.session_state['is_editor'] = False
+                st.session_state['admin_user'] = ""
                 st.session_state['login_failed'] = True
 
 # ---- TOP-CENTER ADMIN LOGIN BUTTON OR LOGOUT ----
@@ -239,7 +247,7 @@ if st.session_state['show_login'] and not st.session_state['is_editor']:
         st.error("Incorrect username or password.")
 
 if st.session_state['is_editor']:
-    st.caption("**Admin mode enabled**")
+    st.caption(f"**Admin mode enabled: {st.session_state['admin_user']}**")
 else:
     st.caption("**Read only mode** (progress & deposit info only)")
 
@@ -290,7 +298,7 @@ with st.sidebar:
             new_divines[item] = div
         if st.button("Save Targets and Values") and changed:
             save_targets(new_targets, new_divines, st.session_state['bank_buy_pct'], ws_targets)
-            append_admin_log("Edit Targets/Values", "Admin updated targets or values.")
+            append_admin_log("Edit Targets/Values", "Admin updated targets or values.", st.session_state['admin_user'])
             st.success("Targets, Divine values and Bank % saved! Refresh the page to see updates.")
             st.stop()
     else:
@@ -334,7 +342,7 @@ if st.session_state['is_editor']:
             if new_rows:
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 save_data(df)
-                append_admin_log("Deposit", f"{user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
+                append_admin_log("Deposit", f"{user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]), st.session_state['admin_user'])
                 st.session_state['deposit_submitted'] = True
                 st.success(f"Deposits added for {user}: " + ", ".join([f"{r['Quantity']}x {r['Item']}" for r in new_rows]))
                 st.rerun()
@@ -343,7 +351,6 @@ if st.session_state['is_editor']:
             else:
                 st.warning("Please enter at least one item with quantity > 0.")
 
-    # Reset anti-double-submit flag when not submitting
     if st.session_state.get('deposit_submitted', False) and not submitted:
         st.session_state['deposit_submitted'] = False
 
@@ -351,22 +358,29 @@ st.markdown("---")
 
 # ---- DUPLICATE OFFERS ADMIN PANEL ----
 if st.session_state['is_editor']:
-    st.header("Pending Duplicate Offers (confirm to add)")
+    st.header("Pending Duplicate Offers (confirm or decline)")
     pending_dupes, ws_pending = load_pending_dupes()
     if not pending_dupes.empty and ws_pending is not None:
         for idx, row in pending_dupes.iterrows():
-            c = st.columns([2, 2, 2, 1])
+            c = st.columns([2, 2, 2, 1, 1])
             c[0].write(row['User'])
             c[1].write(row['Item'])
             c[2].write(row['Quantity'])
-            if c[3].button("Confirm", key=f"confirm_dupe_{idx}"):
+            confirm_key = f"confirm_dupe_{idx}"
+            decline_key = f"decline_dupe_{idx}"
+            if c[3].button("Confirm", key=confirm_key):
                 # Move to real deposits
                 new_row = {"User": row["User"], "Item": row["Item"], "Quantity": row["Quantity"]}
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 save_data(df)
                 remove_pending_dupe(ws_pending, idx)
-                append_admin_log("Confirm Duplicate", f"{row['User']} - {row['Item']} ({row['Quantity']})")
+                append_admin_log("Confirm Duplicate", f"{row['User']} - {row['Item']} ({row['Quantity']})", st.session_state['admin_user'])
                 st.success(f"Duplicate offer confirmed and added for {row['User']} - {row['Item']} ({row['Quantity']})")
+                st.rerun()
+            if c[4].button("Decline", key=decline_key):
+                remove_pending_dupe(ws_pending, idx)
+                append_admin_log("Decline Duplicate", f"{row['User']} - {row['Item']} ({row['Quantity']})", st.session_state['admin_user'])
+                st.info(f"Duplicate offer declined for {row['User']} - {row['Item']} ({row['Quantity']})")
                 st.rerun()
     else:
         st.info("No pending duplicate offers.")
@@ -384,7 +398,6 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
     <div style='margin-top: 38px;'></div>
     <h2 style="color:{color}; font-weight:bold; margin-bottom: 14px;">{cat}</h2>
     """, unsafe_allow_html=True)
-    # Calculate and sort item totals descending
     item_totals = []
     for item in items:
         total = df[(df["Item"] == item)]["Quantity"].sum()
@@ -396,11 +409,7 @@ for cat, items in ORIGINAL_ITEM_CATEGORIES.items():
         target = targets[item]
         divine_val = divines[item]
         divine_total = (total / target * divine_val) if target > 0 else 0
-        # Calculate instant sell price for ONE item
-        if target > 0:
-            instant_sell_price = (divine_val / target) * bank_buy_pct / 100
-        else:
-            instant_sell_price = 0
+        instant_sell_price = (divine_val / target) * bank_buy_pct / 100 if target > 0 else 0
 
         extra_info = ""
         if divine_val > 0 and target > 0:
@@ -494,7 +503,7 @@ if st.session_state['is_editor']:
                                 if delete_button:
                                     df = df.drop(row['index']).reset_index(drop=True)
                                     save_data(df)
-                                    append_admin_log("Delete", f"{row['User']} - {row['Item']} ({row['Quantity']})")
+                                    append_admin_log("Delete", f"{row['User']} - {row['Item']} ({row['Quantity']})", st.session_state['admin_user'])
                                     st.success(f"Permanently deleted: {row['User']} - {row['Item']} ({row['Quantity']})")
                                     st.rerun()
                         else:
